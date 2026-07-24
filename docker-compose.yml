@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  cri-api:
+    build: .
+    container_name: cri-metrics-api
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///./cri_metrics.db
+      - ALERT_THRESHOLD=65.0
+      - DATA_FRESHNESS_HOURS=24
+      - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL:-}
+    volumes:
+      - cri-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Opcional: PostgreSQL para produccion
+  # db:
+  #   image: postgres:15-alpine
+  #   container_name: cri-postgres
+  #   environment:
+  #     POSTGRES_USER: cri
+  #     POSTGRES_PASSWORD: ${DB_PASSWORD:-cri123}
+  #     POSTGRES_DB: cri_metrics
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+  #   restart: unless-stopped
+
+volumes:
+  cri-data:
+  # postgres-data:
