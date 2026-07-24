@@ -71,14 +71,66 @@ class IngestionPipeline:
                 B2BScraperDataSource(),
             ]
 
-        total = 0
+        # Fase 1: Colectar todos los registros
+        all_records = []
+        source_stats = {}
         for source in sources:
             try:
                 data = source.fetch()
-                count = self.ingest_batch(data)
-                total += count
-                logger.info(f"Fuente {source.__class__.__name__}: {count} registros")
+                source_name = source.__class__.__name__
+                source_stats[source_name] = len(data)
+                for rec in data:
+                    rec['_source_name'] = source_name
+                all_records.extend(data)
+                logger.info(f"Fuente {source_name}: {len(data)} registros")
             except Exception as e:
                 logger.error(f"Fallo en fuente {source.__class__.__name__}: {e}")
 
+        # Fase 2: Deduplicar y validar KPIs con multiples fuentes
+        # SHPD: puede venir de WhatToMine y LambdaLabs. Promediamos.
+        shpd_values = [r for r in all_records if r.get("kpi_code") == "SHPD"]
+        if len(shpd_values) > 1:
+            avg_shpd = sum(r["raw_value"] for r in shpd_values) / len(shpd_values)
+            logger.info(f"[CROSS-VALIDATION] SHPD de {len(shpd_values)} fuentes: "
+                        f"valores={[r['raw_value'] for r in shpd_values]}, promedio={avg_shpd:.2f}")
+            # Reemplazar todos los SHPD con el promedio, marcando fuente combinada
+            all_records = [r for r in all_records if r.get("kpi_code") != "SHPD"]
+            all_records.append({
+                "kpi_code": "SHPD",
+                "raw_value": avg_shpd,
+                "timestamp": datetime.utcnow(),
+                "data_source": f"COMBINED({','.join(r['data_source'] for r in shpd_values)})",
+            })
+        
+        # CFBR: puede venir de CoinGecko y Binance. Promediamos.
+        cfbr_values = [r for r in all_records if r.get("kpi_code") == "CFBR"]
+        if len(cfbr_values) > 1:
+            avg_cfbr = sum(r["raw_value"] for r in cfbr_values) / len(cfbr_values)
+            logger.info(f"[CROSS-VALIDATION] CFBR de {len(cfbr_values)} fuentes: "
+                        f"valores={[r['raw_value'] for r in cfbr_values]}, promedio={avg_cfbr:.2f}")
+            all_records = [r for r in all_records if r.get("kpi_code") != "CFBR"]
+            all_records.append({
+                "kpi_code": "CFBR",
+                "raw_value": avg_cfbr,
+                "timestamp": datetime.utcnow(),
+                "data_source": f"COMBINED({','.join(r['data_source'] for r in cfbr_values)})",
+            })
+
+        # Fase 3: Validacion cruzada entre KPIs relacionados
+        # GSPI y SHPD miden ambos precios GPU. Si divergen >50 puntos, alerta.
+        gspi_rec = next((r for r in all_records if r.get("kpi_code") == "GSPI"), None)
+        shpd_rec = next((r for r in all_records if r.get("kpi_code") == "SHPD"), None)
+        if gspi_rec and shpd_rec:
+            divergence = abs(gspi_rec["raw_value"] - shpd_rec["raw_value"])
+            if divergence > 50:
+                logger.warning(f"[DISCREPANCIA] GSPI={gspi_rec['raw_value']:.2f} vs SHPD={shpd_rec['raw_value']:.2f} "
+                               f"(diferencia={divergence:.2f}). Mercado spot vs cloud diverge fuertemente.")
+
+        # Fase 4: Ingestar
+        # Limpiar campo interno _source_name
+        for r in all_records:
+            r.pop('_source_name', None)
+        
+        total = self.ingest_batch(all_records)
+        logger.info(f"Total ingestado tras deduplicacion/validacion: {total} registros")
         return total

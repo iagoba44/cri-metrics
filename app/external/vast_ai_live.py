@@ -109,38 +109,48 @@ class VastAIClient:
     def compute_uor(self) -> Optional[float]:
         """
         Calcula UOR: Underutilization/Overcapacity Ratio.
-        Ratio de GPUs disponibles (rentable=True, rented=False) vs total rentable.
-        Retorna: porcentaje de overcapacity (0-100).
+        
+        CORRECCION v2: La API publica de Vast.ai devuelve 'rented=false' 
+        para TODOS los bundles (limitacion de la API). 
+        
+        Nuevo approach: Usamos precio como proxy inverso de demanda.
+        - Demanda alta -> precios altos -> UOR bajo
+        - Demanda baja -> precios bajos -> UOR alto
+        
+        Retorna: porcentaje de infrautilizacion (0-100).
         """
         all_offers = self.fetch_bundles()
         if not all_offers:
             return None
 
-        total_rentable = 0
-        total_rented = 0
-        total_gpus_rentable = 0
-        total_gpus_rented = 0
-
+        # Calcular precio promedio de GPUs rentables
+        gpu_prices = []
         for offer in all_offers:
-            rentable = offer.get("rentable", False)
-            rented = offer.get("rented", False)
+            dph = offer.get("dph_total", 0)
             num_gpus = offer.get("num_gpus", 1)
+            rentable = offer.get("rentable", False)
+            if rentable and dph > 0:
+                gpu_prices.append(dph / num_gpus)
 
-            if rentable:
-                total_rentable += 1
-                total_gpus_rentable += num_gpus
-                if rented:
-                    total_rented += 1
-                    total_gpus_rented += num_gpus
+        if not gpu_prices:
+            return None
 
-        if total_gpus_rentable == 0:
-            return 0.0
+        avg_price = sum(gpu_prices) / len(gpu_prices)
+        
+        # Baseline: precio "saludable" de GPU spot high-end
+        baseline = 2.00
+        
+        # Si precio = baseline -> UOR = 0% (capacidad totalmente utilizada)
+        # Si precio = 0 -> UOR = 100% (capacidad sin utilizar)
+        if avg_price >= baseline:
+            uor = 0.0
+        else:
+            uor = ((baseline - avg_price) / baseline) * 100
+        
+        uor = max(0.0, min(100.0, uor))
 
-        # UOR = % de capacidad NO alquilada
-        uor = ((total_gpus_rentable - total_gpus_rented) / total_gpus_rentable) * 100
-
-        logger.info(f"[Vast.ai UOR] rentable_gpus={total_gpus_rentable}, "
-                    f"rented_gpus={total_gpus_rented}, uor={uor:.2f}%")
+        logger.info(f"[Vast.ai UOR v2] avg_price=${avg_price:.4f}/h, baseline=${baseline}, "
+                    f"uor={uor:.2f}% (precio como proxy de demanda)")
 
         return round(uor, 2)
 

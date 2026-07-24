@@ -18,8 +18,12 @@ class WhatToMineScraper:
     def scrape_gpu_profitability(self) -> Optional[float]:
         """
         Extrae rentabilidad promedio de GPUs desde WhatToMine.
-        Retorna: indice de rentabilidad promedio (mayor = demanda alta).
-        Usamos el inverso para SHPD: baja rentabilidad = baja demanda = deflacion.
+        Retorna: indice de deflacion (0-100) donde mayor = mayor caida de demanda.
+        
+        VALIDACION v2:
+        - Verifica que los numeros extraidos esten en rango razonable (5% - 5000%)
+        - Si el promedio es < 5% o > 5000%, descarta como ruido/anomalia
+        - Si falla, retorna None para que el pipeline use Lambda Labs como fallback
         """
         try:
             response = requests.get(self.URL, timeout=20, headers={
@@ -32,9 +36,6 @@ class WhatToMineScraper:
 
             # Buscar patrones de rentabilidad en la tabla
             # Ejemplo: "1472% | 1354%" o similares
-            # Extraemos todos los numeros de rentabilidad
-            
-            # Patron: buscamos porcentajes de rentabilidad
             matches = re.findall(r'(\d+)%\s*\|\s*(\d+)%', html)
             if not matches:
                 # Fallback: buscar cualquier numero seguido de %
@@ -50,7 +51,13 @@ class WhatToMineScraper:
                 logger.warning("[WTM] No se encontraron datos de rentabilidad")
                 return None
 
-            avg_profit = sum(profits) / len(profits)
+            # VALIDACION: descartar outliers
+            valid_profits = [p for p in profits if 5 < p < 5000]
+            if len(valid_profits) < 3:
+                logger.warning(f"[WTM] Insuficientes datos validos ({len(valid_profits)}). Posible bloqueo/cambio HTML.")
+                return None
+
+            avg_profit = sum(valid_profits) / len(valid_profits)
             
             # SHPD proxy: si rentabilidad promedio < 500%, demanda baja = deflacion
             # Baseline de rentabilidad "saludable" = 1000%
@@ -60,7 +67,7 @@ class WhatToMineScraper:
             else:
                 deflation = ((baseline - avg_profit) / baseline) * 100
 
-            logger.info(f"[WhatToMine SHPD] avg_profitability={avg_profit:.0f}%, "
+            logger.info(f"[WhatToMine SHPD] avg_profitability={avg_profit:.0f}%, samples={len(valid_profits)}, "
                         f"deflation_proxy={deflation:.2f}% (baseline={baseline})")
             
             return round(deflation, 2)
