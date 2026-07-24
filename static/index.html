@@ -156,6 +156,84 @@
         .status-ok { color: var(--success); }
         .status-warn { color: var(--warning); }
         .status-error { color: var(--danger); }
+        .status-offline { color: #6e7681; }
+
+        .source-delta {
+            font-family: 'Consolas', monospace;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+        .source-value {
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin-top: 6px;
+        }
+
+        .explanation-item {
+            margin-bottom: 25px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+        .explanation-item:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+        .exp-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 8px;
+        }
+        .exp-desc {
+            font-size: 0.85rem;
+            color: var(--text);
+            margin-bottom: 8px;
+        }
+        .exp-formula {
+            background: #0d1117;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.8rem;
+            color: var(--success);
+            margin-bottom: 8px;
+        }
+        .exp-meta {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .exp-meta-item {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        .exp-meta-label { text-transform: uppercase; letter-spacing: 0.05em; }
+        .exp-meta-value { color: var(--text); font-weight: 600; }
+
+        .realtime-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.75rem;
+            color: var(--success);
+            margin-bottom: 10px;
+        }
+        .pulse {
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.3); }
+            100% { opacity: 1; transform: scale(1); }
+        }
 
         @media (max-width: 768px) {
             .grid { grid-template-columns: 1fr; }
@@ -172,19 +250,26 @@
             </div>
             <div class="controls">
                 <button onclick="runIngestion()" id="btn-ingest">
-                    🔄 Ingesta Real
+                    Ingesta Real
                 </button>
                 <button onclick="calculateCRI()" id="btn-calc" class="btn-secondary">
-                    📊 Calcular CRI
+                    Calcular CRI
+                </button>
+                <button onclick="loadSourcesPanel()" class="btn-secondary">
+                    Fuentes
                 </button>
                 <button onclick="forceRefresh()" class="btn-secondary">
-                    🔃 Refresh
+                    Refresh
                 </button>
             </div>
         </header>
 
         <div class="grid">
             <div class="card">
+                <div class="realtime-indicator">
+                    <div class="pulse"></div>
+                    <span>En vivo - <span id="live-timestamp">--</span></span>
+                </div>
                 <div class="card-title">CRI Score Actual</div>
                 <div class="big-number" id="cri-score">--</div>
                 <div id="cri-zone" class="zone-badge zone-low">SIN DATOS</div>
@@ -216,10 +301,32 @@
                 </div>
             </div>
             <div class="card">
-                <div class="card-title">Fuentes de Datos</div>
+                <div class="card-title">Fuentes de Datos en Tiempo Real</div>
+                <div class="realtime-indicator">
+                    <div class="pulse"></div>
+                    <span id="sources-summary">Cargando estado...</span>
+                </div>
                 <div class="sources-grid" id="sources-grid">
                     <!-- Se llena dinamicamente -->
                 </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Como Accedemos a las Fuentes y Ultimo Delta</div>
+            <div id="sources-detail-panel">
+                <p style="color:var(--text-muted); font-size:0.85rem;">
+                    Ejecuta "Ingesta Real" para ver el panel detallado de cada fuente con timestamp exacto y delta desde la ultima actualizacion.
+                </p>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Que Mide Cada KPI - Guia Detallada</div>
+            <div id="explanations-panel">
+                <p style="color:var(--text-muted); font-size:0.85rem;">
+                    Cargando explicaciones... Haga click en "Refresh" si no carga.
+                </p>
             </div>
         </div>
 
@@ -268,8 +375,9 @@
             log('Iniciando ingesta desde fuentes reales...', 'info');
             try {
                 const data = await apiCall('POST', '/run-ingestion?use_real=true');
-                log(`Ingesta completada: ${data.inserted} registros desde ${data.message.includes('reales') ? 'fuentes reales' : 'simuladores'}`, 'success');
+                log(`Ingesta: ${data.inserted} registros (${data.message})`, 'success');
                 await loadLatestCRI();
+                await loadSourcesPanel();
             } catch (e) {
                 log('Fallo en ingesta', 'error');
             } finally {
@@ -285,9 +393,9 @@
                 const data = await apiCall('POST', '/calculate-cri');
                 const cri = data.data;
                 updateDashboard(cri);
-                log(`CRI calculado: ${cri.cri_score} (${cri.risk_zone})`, cri.risk_zone === 'CRITICAL' ? 'error' : 'success');
+                log(`CRI: ${cri.cri_score} (${cri.risk_zone})`, cri.risk_zone === 'CRITICAL' ? 'error' : 'success');
             } catch (e) {
-                log('Fallo en calculo', 'error');
+                log('Fallo calculo', 'error');
             } finally {
                 btn.disabled = false;
             }
@@ -302,6 +410,7 @@
                 cri.risk_zone === 'MODERATE' ? 'zone-moderate' : 'zone-critical'
             );
             document.getElementById('last-calc').textContent = new Date(cri.timestamp).toLocaleString('es-ES');
+            document.getElementById('live-timestamp').textContent = new Date().toLocaleTimeString('es-ES');
 
             // KPIs
             const kpiGrid = document.getElementById('kpi-grid');
@@ -360,13 +469,121 @@
             try {
                 const data = await apiCall('GET', '/latest-cri');
                 updateDashboard(data);
-                log(`Cargado CRI: ${data.cri_score} (${data.risk_zone})`, 'info');
+                log(`Cargado CRI: ${data.cri_score}`, 'info');
             } catch (e) {
-                log('No hay datos CRI previos. Ejecute ingesta + calculo.', 'warn');
+                log('No hay CRI previo', 'warn');
             }
         }
 
-        function renderSources() {
+        async function loadSourcesPanel() {
+            try {
+                const data = await apiCall('GET', '/sources');
+                const grid = document.getElementById('sources-grid');
+                grid.innerHTML = '';
+
+                document.getElementById('sources-summary').textContent = 
+                    `${data.active_kpis}/${data.total_kpis} activas | ${data.stale_kpis} stale | ${data.offline_kpis} offline`;
+
+                data.sources.forEach(s => {
+                    const div = document.createElement('div');
+                    div.className = 'source-card';
+                    const statusClass = s.status === 'ACTIVE' ? 'status-ok' : 
+                                       s.status === 'STALE' ? 'status-warn' : 'status-error';
+                    const borderColor = s.status === 'ACTIVE' ? 'var(--success)' : 
+                                         s.status === 'STALE' ? 'var(--warning)' : 'var(--danger)';
+                    div.style.borderLeftColor = borderColor;
+
+                    const deltaText = s.delta_seconds !== null 
+                        ? (s.delta_seconds < 60 ? `${s.delta_seconds.toFixed(0)}s` : 
+                           s.delta_seconds < 3600 ? `${(s.delta_seconds/60).toFixed(1)}m` :
+                           `${(s.delta_seconds/3600).toFixed(1)}h`)
+                        : 'N/A';
+
+                    div.innerHTML = `
+                        <div class="source-name">${s.kpi}</div>
+                        <div class="source-value" style="color:${borderColor}">${s.raw_value !== null ? s.raw_value.toFixed(2) : '--'}</div>
+                        <div class="source-delta">delta: ${deltaText} | ${s.data_source}</div>
+                        <div class="source-status"><span class="${statusClass}">●</span> ${s.status} | ${s.freshness}</div>
+                    `;
+                    grid.appendChild(div);
+                });
+
+                // Panel detallado
+                const detailPanel = document.getElementById('sources-detail-panel');
+                detailPanel.innerHTML = `
+                    <div class="sources-grid">
+                        ${data.sources.map(s => `
+                            <div class="source-card" style="border-left-color: ${s.status === 'ACTIVE' ? 'var(--success)' : s.status === 'STALE' ? 'var(--warning)' : 'var(--danger)'}">
+                                <div class="source-name">${s.kpi}</div>
+                                <div class="source-value">${s.raw_value !== null ? s.raw_value.toFixed(2) : '--'}</div>
+                                <div class="source-delta">Fuente: ${s.data_source}</div>
+                                <div class="source-delta">Timestamp: ${s.timestamp || 'N/A'}</div>
+                                <div class="source-delta">Delta: ${s.delta_seconds !== null ? s.delta_seconds.toFixed(1) + ' segundos' : 'N/A'}</div>
+                                <div class="source-delta">Freshness: ${s.freshness}</div>
+                                <div class="source-status"><span class="${s.status === 'ACTIVE' ? 'status-ok' : s.status === 'STALE' ? 'status-warn' : 'status-error'}">●</span> ${s.status}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+
+                log(`Fuentes: ${data.active_kpis}/${data.total_kpis} activas`, 'info');
+            } catch (e) {
+                log('Error cargando fuentes', 'error');
+            }
+        }
+
+        async function loadExplanations() {
+            try {
+                const data = await apiCall('GET', '/explanations');
+                const panel = document.getElementById('explanations-panel');
+                panel.innerHTML = '';
+
+                const criExp = data.explanations.cri_score;
+                panel.innerHTML += `
+                    <div class="explanation-item">
+                        <div class="exp-title">${criExp.name}</div>
+                        <div class="exp-desc">${criExp.description}</div>
+                        <div class="exp-formula">${criExp.formula}</div>
+                        <div class="exp-meta">
+                            <div class="exp-meta-item"><div class="exp-meta-label">LOW</div><div class="exp-meta-value">${criExp.zones.LOW.range}: ${criExp.zones.LOW.meaning}</div></div>
+                            <div class="exp-meta-item"><div class="exp-meta-label">MODERATE</div><div class="exp-meta-value">${criExp.zones.MODERATE.range}: ${criExp.zones.MODERATE.meaning}</div></div>
+                            <div class="exp-meta-item"><div class="exp-meta-label">CRITICAL</div><div class="exp-meta-value">${criExp.zones.CRITICAL.range}: ${criExp.zones.CRITICAL.meaning}</div></div>
+                        </div>
+                    </div>
+                `;
+
+                const kpiOrder = ['GSPI', 'SHPD', 'LTCR', 'CFBR', 'UOR'];
+                kpiOrder.forEach(kpi => {
+                    const exp = data.explanations[kpi];
+                    if (!exp) return;
+                    panel.innerHTML += `
+                        <div class="explanation-item">
+                            <div class="exp-title">${exp.name} (${kpi})</div>
+                            <div class="exp-desc">${exp.description}</div>
+                            <div class="exp-formula">${exp.formula}</div>
+                            <div class="exp-meta">
+                                <div class="exp-meta-item"><div class="exp-meta-label">Fuente</div><div class="exp-meta-value">${exp.source || exp.sources}</div></div>
+                                <div class="exp-meta-item"><div class="exp-meta-label">Unidad</div><div class="exp-meta-value">${exp.unit}</div></div>
+                                <div class="exp-meta-item"><div class="exp-meta-label">Peso CRI</div><div class="exp-meta-value">${exp.weight}</div></div>
+                                <div class="exp-meta-item"><div class="exp-meta-label">Frecuencia</div><div class="exp-meta-value">${exp.update_frequency}</div></div>
+                            </div>
+                            <div style="margin-top:10px; font-size:0.8rem; color:var(--text-muted)">
+                                <strong>Baseline:</strong> ${exp.baseline || 'N/A'}
+                            </div>
+                            <div style="margin-top:8px; font-size:0.75rem; color:var(--text-muted)">
+                                <div style="margin-bottom:4px"><span style="color:var(--success)">0%:</span> ${exp.interpretation['0%']}</div>
+                                <div style="margin-bottom:4px"><span style="color:var(--warning)">50%:</span> ${exp.interpretation['50%']}</div>
+                                <div><span style="color:var(--danger)">100%:</span> ${exp.interpretation['100%']}</div>
+                            </div>
+                        </div>
+                    `;
+                });
+            } catch (e) {
+                log('Error cargando explicaciones', 'error');
+            }
+        }
+
+        function renderSourcesStatic() {
             const sources = [
                 { name: 'Vast.ai', desc: 'Precios spot GPU y ocupacion', kpi: 'GSPI, UOR', status: 'ok' },
                 { name: 'CoinGecko', desc: 'Volatilidad mercado crypto', kpi: 'CFBR', status: 'ok' },
@@ -377,6 +594,7 @@
                 { name: 'FRED (Fed)', desc: 'Capacidad industrial macro', kpi: 'LTCR', status: 'warn' },
             ];
             const grid = document.getElementById('sources-grid');
+            grid.innerHTML = '';
             sources.forEach(s => {
                 const div = document.createElement('div');
                 div.className = 'source-card';
@@ -393,8 +611,6 @@
 
         async function loadHistory() {
             try {
-                // En una implementacion completa, agregariamos un endpoint /history
-                // Por ahora, mostramos un grafico vacio o placeholder
                 const ctx = document.getElementById('historyChart').getContext('2d');
                 historyChart = new Chart(ctx, {
                     type: 'line',
@@ -435,15 +651,27 @@
         function forceRefresh() {
             log('Refrescando dashboard...', 'info');
             loadLatestCRI();
+            loadSourcesPanel();
+            loadExplanations();
         }
+
+        // Auto-refresh cada 30 segundos
+        setInterval(() => {
+            if (document.visibilityState === 'visible') {
+                loadSourcesPanel();
+                document.getElementById('live-timestamp').textContent = new Date().toLocaleTimeString('es-ES');
+            }
+        }, 30000);
 
         // Inicializacion
         document.addEventListener('DOMContentLoaded', () => {
-            renderSources();
+            renderSourcesStatic();
             loadHistory();
             loadLatestCRI();
+            loadSourcesPanel();
+            loadExplanations();
             log('Dashboard CRI inicializado', 'success');
-            log('Haga click en "Ingesta Real" para cargar datos del mercado', 'info');
+            log('Click en "Ingesta Real" para cargar datos del mercado', 'info');
         });
     </script>
 </body>
