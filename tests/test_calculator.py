@@ -3,7 +3,7 @@ Valida Regla 3 (Ponderacion) y Escenarios de Aceptacion.
 """
 import pytest
 from decimal import Decimal
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.database import Base
@@ -28,7 +28,7 @@ class TestCRICalculator:
     def _insert_telemetry(self, db, kpi, raw, ts=None):
         rec = TelemetryRecord(
             kpi_code=kpi,
-            timestamp=ts or datetime.utcnow(),
+            timestamp=ts or datetime.now(timezone.utc),
             raw_value=Decimal(str(raw)),
             data_source="TEST",
         )
@@ -74,7 +74,7 @@ class TestCRICalculator:
 
     def test_missing_data_uses_last_valid(self, db):
         """MISSING_DATA: usa ultimo registro valido si no hay datos frescos."""
-        old_ts = datetime.utcnow() - timedelta(hours=48)
+        old_ts = datetime.now(timezone.utc) - timedelta(hours=48)
         self._insert_telemetry(db, "GSPI", 50.0, old_ts)
         self._insert_telemetry(db, "SHPD", 50.0, old_ts)
         self._insert_telemetry(db, "LTCR", 50.0, old_ts)

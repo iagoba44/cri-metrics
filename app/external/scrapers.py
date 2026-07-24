@@ -1,5 +1,5 @@
 """Fuente de datos: Web Scrapers B2B."""
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict
 import logging
 
@@ -21,7 +21,7 @@ class B2BScraperDataSource:
             {
                 "kpi_code": "SHPD",
                 "raw_value": 18.5,  # Deflación del 18.5% en servidores
-                "timestamp": datetime.utcnow(),
+                "timestamp": datetime.now(timezone.utc),
                 "data_source": "B2B_SCRAPER",
             },
         ]

@@ -2,7 +2,7 @@
 Extrae rentabilidad de GPUs como proxy de demanda hardware (SHPD).
 Si la rentabilidad minera cae = demanda GPU baja = deflacion de precios.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Optional
 import requests
 import re
@@ -79,7 +79,7 @@ class WhatToMineScraper:
     def fetch(self) -> List[Dict]:
         """Pipeline de ingesta: retorna registros para SHPD."""
         records = []
-        ts = datetime.utcnow()
+        ts = datetime.now(timezone.utc)
 
         shpd = self.scrape_gpu_profitability()
         if shpd is not None:

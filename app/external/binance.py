@@ -2,7 +2,7 @@
 Extrae datos de mercado crypto como proxy adicional de CFBR (volatilidad)
 y como proxy de demanda GPU (volumen ETH = demanda de GPUs para minado/IA).
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Optional
 import requests
 import logging
@@ -90,7 +90,7 @@ class BinanceClient:
     def fetch(self) -> List[Dict]:
         """Pipeline de ingesta: retorna registros para CFBR."""
         records = []
-        ts = datetime.utcnow()
+        ts = datetime.now(timezone.utc)
 
         cfbr = self.compute_cfbr_volatility()
         if cfbr is not None:

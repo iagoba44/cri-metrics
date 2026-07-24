@@ -2,7 +2,7 @@
 Usa datos de produccion industrial y capacidad utilizada como proxy macro.
 FRED API key gratuita disponible en https://fred.stlouisfed.org/docs/api/api_key.html
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Optional
 import requests
 import logging
@@ -64,7 +64,7 @@ class FREDClient:
     def fetch(self) -> List[Dict]:
         """Pipeline de ingesta: retorna registros para LTCR (macro proxy)."""
         records = []
-        ts = datetime.utcnow()
+        ts = datetime.now(timezone.utc)
 
         macro = self.compute_macro_proxy()
         if macro is not None:

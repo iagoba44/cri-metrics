@@ -1,6 +1,6 @@
 """Motor de cálculo del Índice de Riesgo Compuesto (CRI)."""
 from decimal import Decimal
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
 from app.models import TelemetryRecord, RiskIndex
@@ -25,7 +25,7 @@ class CRICalculator:
         Obtiene la lectura más reciente por KPI.
         Si no hay datos frescos (< 24h), usa el último disponible (MISSING_DATA).
         """
-        cutoff = datetime.utcnow() - timedelta(hours=settings.DATA_FRESHNESS_HOURS)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=settings.DATA_FRESHNESS_HOURS)
         latest_by_kpi: Dict[str, TelemetryRecord] = {}
 
         for kpi in settings.KPI_WEIGHTS.keys():

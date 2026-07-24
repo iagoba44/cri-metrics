@@ -1,7 +1,7 @@
 """Cliente REAL para Vast.ai - API publica de bundles.
 Extrae precios spot GPU (GSPI) y ratio de ocupacion (UOR).
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Optional
 import requests
 import logging
@@ -157,7 +157,7 @@ class VastAIClient:
     def fetch(self) -> List[Dict]:
         """Pipeline de ingesta: retorna registros para GSPI y UOR."""
         records = []
-        ts = datetime.utcnow()
+        ts = datetime.now(timezone.utc)
 
         gspi = self.compute_gspi()
         if gspi is not None:

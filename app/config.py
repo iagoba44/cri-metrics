@@ -1,5 +1,5 @@
-"""Configuración centralizada del sistema CRI."""
-from pydantic_settings import BaseSettings
+"""Configuracion centralizada del sistema CRI."""
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
 class Settings(BaseSettings):
@@ -12,16 +12,16 @@ class Settings(BaseSettings):
     # Ventana de frescura de datos (horas)
     DATA_FRESHNESS_HOURS: int = 24
     
-    # Bounds para normalización Min-Max
+    # Bounds para normalizacion Min-Max
     KPI_BOUNDS: dict = {
-        "GSPI": {"min": 0.0, "max": 100.0},    # GPU Spot Price Index (% deflación)
+        "GSPI": {"min": 0.0, "max": 100.0},    # GPU Spot Price Index (% deflacion)
         "SHPD": {"min": 0.0, "max": 100.0},    # Server Hardware Price Deflation (%)
         "LTCR": {"min": 0.0, "max": 100.0},    # Long-Term Contract Ratio (%)
         "CFBR": {"min": 0.0, "max": 100.0},    # Cloud Free-Burn Rate (%)
         "UOR":  {"min": 0.0, "max": 100.0},    # Underutilization/Overcapacity Ratio (%)
     }
     
-    # Pesos del índice CRI
+    # Pesos del indice CRI
     KPI_WEIGHTS: dict = {
         "GSPI": 0.25,
         "SHPD": 0.15,
@@ -30,14 +30,13 @@ class Settings(BaseSettings):
         "UOR":  0.20,
     }
     
-    # KPIs con fórmula inversa (mayor valor = mayor riesgo → score 100)
+    # KPIs con formula inversa (mayor valor = mayor riesgo -> score 100)
     INVERSE_KPIS: list = ["GSPI", "LTCR"]
     
     # Webhook para alertas (opcional)
     ALERT_WEBHOOK_URL: str = ""
     
-    class Config:
-        env_file = ".env"
+    model_config = SettingsConfigDict(env_file=".env")
 
 @lru_cache()
 def get_settings() -> Settings:

@@ -1,5 +1,5 @@
 """Fuentes de datos: Neoclouds (RunPod, Vast.ai)."""
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict
 import logging
 
@@ -20,13 +20,13 @@ class NeocloudDataSource:
             {
                 "kpi_code": "CFBR",
                 "raw_value": 82.5,  # Free-burn rate alto = riesgo operativo
-                "timestamp": datetime.utcnow(),
+                "timestamp": datetime.now(timezone.utc),
                 "data_source": "VAST_AI",
             },
             {
                 "kpi_code": "UOR",
                 "raw_value": 45.0,  # 45% de capacidad infrautilizada
-                "timestamp": datetime.utcnow(),
+                "timestamp": datetime.now(timezone.utc),
                 "data_source": "RUNPOD",
             },
         ]

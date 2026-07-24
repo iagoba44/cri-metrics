@@ -1,7 +1,7 @@
 """Scraper para precios de servidores GPU en Lambda Labs (publico).
 Extrae precios de instancias GPU como proxy de SHPD.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Optional
 import requests
 import re
@@ -70,7 +70,7 @@ class LambdaLabsScraper:
     def fetch(self) -> List[Dict]:
         """Pipeline de ingesta: retorna registros para SHPD."""
         records = []
-        ts = datetime.utcnow()
+        ts = datetime.now(timezone.utc)
 
         shpd = self.scrape_gpu_pricing()
         if shpd is not None:

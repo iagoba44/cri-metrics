@@ -2,7 +2,7 @@
 Usa capitalizacion y volumen crypto como proxy de CFBR (Cloud Free-Burn Rate).
 La salud del mercado crypto esta altamente correlacionada con la demanda de GPU cloud.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Optional
 import requests
 import logging
@@ -79,7 +79,7 @@ class CoinGeckoClient:
     def fetch(self) -> List[Dict]:
         """Pipeline de ingesta: retorna registros para CFBR."""
         records = []
-        ts = datetime.utcnow()
+        ts = datetime.now(timezone.utc)
 
         cfbr = self.compute_cfbr_proxy()
         if cfbr is not None:

@@ -1,5 +1,5 @@
 """Pipeline de ingesta de datos desde fuentes externas."""
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import List, Dict
 from sqlalchemy.orm import Session
@@ -24,7 +24,7 @@ class IngestionPipeline:
             try:
                 telemetry = TelemetryRecord(
                     kpi_code=rec["kpi_code"],
-                    timestamp=rec.get("timestamp", datetime.utcnow()),
+                    timestamp=rec.get("timestamp", datetime.now(timezone.utc)),
                     raw_value=Decimal(str(rec["raw_value"])),
                     data_source=rec.get("data_source", "UNKNOWN"),
                 )
@@ -98,7 +98,7 @@ class IngestionPipeline:
             all_records.append({
                 "kpi_code": "SHPD",
                 "raw_value": avg_shpd,
-                "timestamp": datetime.utcnow(),
+                "timestamp": datetime.now(timezone.utc),
                 "data_source": f"COMBINED({','.join(r['data_source'] for r in shpd_values)})",
             })
         
@@ -112,7 +112,7 @@ class IngestionPipeline:
             all_records.append({
                 "kpi_code": "CFBR",
                 "raw_value": avg_cfbr,
-                "timestamp": datetime.utcnow(),
+                "timestamp": datetime.now(timezone.utc),
                 "data_source": f"COMBINED({','.join(r['data_source'] for r in cfbr_values)})",
             })
 

@@ -13,7 +13,7 @@ from app.schemas import (
 from app.services.calculator import CRICalculator
 from app.services.ingestion import IngestionPipeline
 from app.models import RiskIndex, TelemetryRecord
-from datetime import datetime
+from datetime import datetime, timezone
 
 router = APIRouter(prefix="/api/v1")
 
@@ -84,7 +84,7 @@ def health_check():
     """Verificacion de salud del servicio."""
     return HealthResponse(
         status="healthy",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
     )
 
 @router.get("/latest-cri", response_model=RiskIndexSchema)
@@ -109,7 +109,7 @@ def get_sources_status(db: Session = Depends(get_db)):
     Panel en tiempo real: estado de cada fuente de datos
     y ultimo delta recuperado.
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     
     # Para cada KPI, obtener el registro mas reciente
     kpis = ["GSPI", "SHPD", "LTCR", "CFBR", "UOR"]
@@ -124,13 +124,20 @@ def get_sources_status(db: Session = Depends(get_db)):
         )
         
         if latest:
-            delta_seconds = (now - latest.timestamp).total_seconds() if latest.timestamp else 999999
+            ts = latest.timestamp
+            if ts:
+                # SQLite devuelve naive; now es aware. Hacemos compatible.
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                delta_seconds = (now - ts).total_seconds()
+            else:
+                delta_seconds = 999999
             sources_data.append({
                 "kpi": kpi,
                 "raw_value": float(latest.raw_value),
                 "normalized_score": float(latest.normalized_score) if latest.normalized_score else None,
                 "data_source": latest.data_source,
-                "timestamp": latest.timestamp.isoformat() if latest.timestamp else None,
+                "timestamp": ts.isoformat() if ts else None,
                 "delta_seconds": round(delta_seconds, 1),
                 "freshness": latest.freshness_flag,
                 "status": "ACTIVE" if delta_seconds < 3600 else "STALE",
@@ -256,6 +263,50 @@ def get_kpi_explanations():
     
     return {
         "status": "success",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "explanations": explanations,
+    }
+
+@router.post("/simulate-critical")
+def simulate_critical(db: Session = Depends(get_db)):
+    """
+    Simula una situacion de riesgo CRITICAL para testing del dashboard y alertas.
+    Inserta telemetria artificial con valores altos de riesgo y calcula CRI.
+    
+    WARNING: Solo para testing. No usar en produccion.
+    """
+    from app.models import TelemetryRecord
+    from decimal import Decimal
+    
+    ts = datetime.now(timezone.utc)
+    test_data = [
+        {"kpi_code": "GSPI", "raw_value": 95.0, "source": "SIMULATION"},
+        {"kpi_code": "SHPD", "raw_value": 90.0, "source": "SIMULATION"},
+        {"kpi_code": "LTCR", "raw_value": 85.0, "source": "SIMULATION"},
+        {"kpi_code": "CFBR", "raw_value": 88.0, "source": "SIMULATION"},
+        {"kpi_code": "UOR", "raw_value": 92.0, "source": "SIMULATION"},
+    ]
+    
+    for rec in test_data:
+        telemetry = TelemetryRecord(
+            kpi_code=rec["kpi_code"],
+            timestamp=ts,
+            raw_value=Decimal(str(rec["raw_value"])),
+            data_source=rec["source"],
+        )
+        db.add(telemetry)
+    db.commit()
+    
+    calculator = CRICalculator(db)
+    risk_index, metadata = calculator.calculate()
+    
+    return {
+        "status": "success",
+        "message": "CRITICAL simulation executed",
+        "data": {
+            "cri_score": risk_index.cri_score,
+            "risk_zone": risk_index.risk_zone,
+            "alerts_triggered": risk_index.alerts_triggered == "true",
+            "component_scores": metadata.get("component_details"),
+        },
     }

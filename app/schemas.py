@@ -1,8 +1,8 @@
-"""Esquemas Pydantic para validación de requests/responses."""
+"""Esquemas Pydantic para validacion de requests/responses."""
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class TelemetryRecordSchema(BaseModel):
     record_id: Optional[str] = None
@@ -13,8 +13,7 @@ class TelemetryRecordSchema(BaseModel):
     data_source: Optional[str] = None
     freshness_flag: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class RiskIndexSchema(BaseModel):
     index_id: Optional[str] = None
@@ -24,8 +23,7 @@ class RiskIndexSchema(BaseModel):
     alerts_triggered: bool
     component_scores: Optional[Dict[str, Any]] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class CalculateCRIResponse(BaseModel):
     status: str

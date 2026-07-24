@@ -1,5 +1,5 @@
 """Fuente de datos: SEC EDGAR API."""
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict
 import logging
 
@@ -19,13 +19,13 @@ class SECDataSource:
             {
                 "kpi_code": "GSPI",
                 "raw_value": 35.0,  # Deflación del 35% en precios GPU spot
-                "timestamp": datetime.utcnow(),
+                "timestamp": datetime.now(timezone.utc),
                 "data_source": "SEC_EDGAR",
             },
             {
                 "kpi_code": "LTCR",
                 "raw_value": 72.0,  # 72% de ingresos en contratos largos
-                "timestamp": datetime.utcnow(),
+                "timestamp": datetime.now(timezone.utc),
                 "data_source": "SEC_EDGAR",
             },
         ]

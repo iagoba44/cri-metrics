@@ -11,7 +11,7 @@ Empresas proxy:
 - DELL: Infraestructura empresarial
 - AMD: CPUs/GPUs
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Optional
 import requests
 import logging
@@ -90,7 +90,7 @@ class YahooFinanceClient:
     def fetch(self) -> List[Dict]:
         """Pipeline de ingesta: retorna registros para LTCR."""
         records = []
-        ts = datetime.utcnow()
+        ts = datetime.now(timezone.utc)
 
         ltcr = self.compute_ltcr_proxy()
         if ltcr is not None:

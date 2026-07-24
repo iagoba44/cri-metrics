@@ -1,6 +1,6 @@
 """Tests para pipeline de ingesta."""
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -22,8 +22,8 @@ class TestIngestion:
     def test_ingest_batch(self, db):
         pipeline = IngestionPipeline(db)
         records = [
-            {"kpi_code": "GSPI", "raw_value": 25.5, "timestamp": datetime.utcnow(), "data_source": "SEC"},
-            {"kpi_code": "CFBR", "raw_value": 75.0, "timestamp": datetime.utcnow(), "data_source": "VAST"},
+            {"kpi_code": "GSPI", "raw_value": 25.5, "timestamp": datetime.now(timezone.utc), "data_source": "SEC"},
+            {"kpi_code": "CFBR", "raw_value": 75.0, "timestamp": datetime.now(timezone.utc), "data_source": "VAST"},
         ]
         count = pipeline.ingest_batch(records)
         assert count == 2
