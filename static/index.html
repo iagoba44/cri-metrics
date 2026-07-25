@@ -214,6 +214,35 @@
         .exp-meta-label { text-transform: uppercase; letter-spacing: 0.05em; }
         .exp-meta-value { color: var(--text); font-weight: 600; }
 
+        .live-banner {
+            background: linear-gradient(90deg, rgba(63,185,80,0.15), rgba(63,185,80,0.05));
+            border: 1px solid var(--success);
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .live-badge {
+            background: var(--success);
+            color: #000;
+            font-weight: 800;
+            font-size: 0.7rem;
+            padding: 3px 8px;
+            border-radius: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .live-text {
+            font-size: 0.85rem;
+            color: var(--text);
+        }
+        .live-url {
+            font-family: 'Consolas', monospace;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
         .realtime-indicator {
             display: inline-flex;
             align-items: center;
@@ -263,6 +292,35 @@
                 </button>
             </div>
         </header>
+
+        <div class="live-banner">
+            <div class="live-badge">LIVE</div>
+            <div>
+                <div class="live-text">Datos reales del mercado en tiempo real</div>
+                <div class="live-url" id="live-urls">Conectando a APIs externas...</div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom:20px;">
+            <div class="card-title">Procedencia de Datos - URLs Externas</div>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:10px; font-size:0.75rem; color:var(--text-muted);">
+                <div><span style="color:var(--success)">●</span> <strong>Vast.ai</strong> → https://vast.ai/api/v0/bundles (GSPI + UOR)</div>
+                <div><span style="color:var(--success)">●</span> <strong>CoinGecko</strong> → https://api.coingecko.com/api/v3/global (CFBR)</div>
+                <div><span style="color:var(--success)">●</span> <strong>Binance</strong> → https://api.binance.com/api/v3/ticker/24hr (CFBR)</div>
+                <div><span style="color:var(--success)">●</span> <strong>WhatToMine</strong> → https://whattomine.com/gpus (SHPD)</div>
+                <div><span style="color:var(--success)">●</span> <strong>Yahoo Finance</strong> → query1.finance.yahoo.com/v8/finance/chart (LTCR)</div>
+                <div><span style="color:var(--success)">●</span> <strong>NiceHash</strong> → https://api2.nicehash.com/main/api/v2/public (SHPD + UOR)</div>
+                <div><span style="color:var(--success)">●</span> <strong>HuggingFace</strong> → https://huggingface.co/api/trending (UOR + SHPD)</div>
+                <div><span style="color:var(--success)">●</span> <strong>DeFiLlama</strong> → https://api.llama.fi/v2/chains (CFBR)</div>
+                <div><span style="color:var(--warning)">●</span> <strong>Lambda Labs</strong> → https://lambdalabs.com/cloud (SHPD - puede fallar por bloqueo)</div>
+                <div><span style="color:var(--warning)">●</span> <strong>FRED</strong> → https://api.stlouisfed.org/fred (LTCR - requiere API key)</div>
+            </div>
+            <div style="margin-top:12px; font-size:0.75rem; color:var(--text-muted); border-top:1px solid var(--border); padding-top:8px;">
+                <strong>Nota:</strong> Todos los requests son HTTP directos a servidores externos. No hay base de datos mock ni valores hardcodeados.
+                El sistema consulta <strong>10 fuentes</strong> y calcula un <strong>valor consenso</strong> por KPI promediando todas las fuentes disponibles.
+                Si una fuente falla, se descarta automáticamente. Si la desviación estándar entre fuentes supera 30 puntos, se genera una alerta de alta variabilidad.
+            </div>
+        </div>
 
         <div class="grid">
             <div class="card">
@@ -508,21 +566,43 @@
                     grid.appendChild(div);
                 });
 
+                // Actualizar banner LIVE con URLs activas
+                const activeUrls = data.sources
+                    .filter(s => s.status === 'ACTIVE')
+                    .map(s => {
+                        const nameMap = {
+                            'VastAIClient': 'Vast.ai',
+                            'CoinGeckoClient': 'CoinGecko',
+                            'BinanceClient': 'Binance',
+                            'WhatToMineScraper': 'WhatToMine',
+                            'YahooFinanceClient': 'Yahoo Finance',
+                            'LambdaLabsScraper': 'Lambda Labs'
+                        };
+                        const url = SOURCE_URLS[nameMap[s.data_source]] || s.data_source;
+                        return `<span style="color:var(--success)">●</span> ${url}`;
+                    }).join(' | ');
+                document.getElementById('live-urls').innerHTML = activeUrls || 'Esperando ingesta... Click en "Ingesta Real"';
+
                 // Panel detallado
                 const detailPanel = document.getElementById('sources-detail-panel');
                 detailPanel.innerHTML = `
+                    <div style="margin-bottom:12px; font-size:0.8rem; color:var(--success);">
+                        <strong>LIVE DATA</strong> - Estos valores provienen directamente de APIs y sitios web externos. No son simulados.
+                    </div>
                     <div class="sources-grid">
-                        ${data.sources.map(s => `
+                        ${data.sources.map(s => {
+                            const url = SOURCE_URLS[s.data_source] || '';
+                            return `
                             <div class="source-card" style="border-left-color: ${s.status === 'ACTIVE' ? 'var(--success)' : s.status === 'STALE' ? 'var(--warning)' : 'var(--danger)'}">
-                                <div class="source-name">${s.kpi}</div>
+                                <div class="source-name">${s.kpi} <span style="font-size:0.7rem; color:var(--text-muted)">(${s.data_source})</span></div>
                                 <div class="source-value">${s.raw_value !== null ? s.raw_value.toFixed(2) : '--'}</div>
-                                <div class="source-delta">Fuente: ${s.data_source}</div>
-                                <div class="source-delta">Timestamp: ${s.timestamp || 'N/A'}</div>
+                                <div class="source-delta" style="color:var(--accent); font-size:0.65rem;">${url}</div>
+                                <div class="source-delta">Timestamp: ${s.timestamp ? new Date(s.timestamp).toLocaleString('es-ES') : 'N/A'}</div>
                                 <div class="source-delta">Delta: ${s.delta_seconds !== null ? s.delta_seconds.toFixed(1) + ' segundos' : 'N/A'}</div>
                                 <div class="source-delta">Freshness: ${s.freshness}</div>
                                 <div class="source-status"><span class="${s.status === 'ACTIVE' ? 'status-ok' : s.status === 'STALE' ? 'status-warn' : 'status-error'}">●</span> ${s.status}</div>
                             </div>
-                        `).join('')}
+                        `}).join('')}
                     </div>
                 `;
 
@@ -583,15 +663,31 @@
             }
         }
 
+        const SOURCE_URLS = {
+            'Vast.ai': 'https://vast.ai/api/v0/bundles',
+            'CoinGecko': 'https://api.coingecko.com/api/v3/global',
+            'Binance': 'https://api.binance.com/api/v3/ticker/24hr',
+            'WhatToMine': 'https://whattomine.com/gpus',
+            'Yahoo Finance': 'https://query1.finance.yahoo.com/v8/finance/chart',
+            'Lambda Labs': 'https://lambdalabs.com/cloud',
+            'FRED': 'https://api.stlouisfed.org/fred',
+            'NiceHash': 'https://api2.nicehash.com/main/api/v2/public',
+            'HuggingFace': 'https://huggingface.co/api/trending',
+            'DeFiLlama': 'https://api.llama.fi/v2/chains'
+        };
+
         function renderSourcesStatic() {
             const sources = [
-                { name: 'Vast.ai', desc: 'Precios spot GPU y ocupacion', kpi: 'GSPI, UOR', status: 'ok' },
-                { name: 'CoinGecko', desc: 'Volatilidad mercado crypto', kpi: 'CFBR', status: 'ok' },
-                { name: 'Binance', desc: 'Volumen ETH y volatilidad', kpi: 'CFBR', status: 'ok' },
-                { name: 'WhatToMine', desc: 'Rentabilidad minera GPU', kpi: 'SHPD', status: 'ok' },
-                { name: 'Yahoo Finance', desc: 'Acciones infra IA (NVDA, SMCI...)', kpi: 'LTCR', status: 'ok' },
-                { name: 'Lambda Labs', desc: 'Precios cloud GPU alternativos', kpi: 'SHPD', status: 'ok' },
-                { name: 'FRED (Fed)', desc: 'Capacidad industrial macro', kpi: 'LTCR', status: 'warn' },
+                { name: 'Vast.ai', desc: 'Precios spot GPU y ocupacion', kpi: 'GSPI, UOR', status: 'ok', url: SOURCE_URLS['Vast.ai'] },
+                { name: 'CoinGecko', desc: 'Volatilidad mercado crypto', kpi: 'CFBR', status: 'ok', url: SOURCE_URLS['CoinGecko'] },
+                { name: 'Binance', desc: 'Volumen ETH y volatilidad', kpi: 'CFBR', status: 'ok', url: SOURCE_URLS['Binance'] },
+                { name: 'WhatToMine', desc: 'Rentabilidad minera GPU', kpi: 'SHPD', status: 'ok', url: SOURCE_URLS['WhatToMine'] },
+                { name: 'Yahoo Finance', desc: 'Acciones infra IA (NVDA, SMCI...)', kpi: 'LTCR', status: 'ok', url: SOURCE_URLS['Yahoo Finance'] },
+                { name: 'NiceHash', desc: 'Hashrate global y paying rates GPU', kpi: 'SHPD, UOR', status: 'ok', url: SOURCE_URLS['NiceHash'] },
+                { name: 'HuggingFace', desc: 'Downloads modelos trending IA', kpi: 'UOR, SHPD', status: 'ok', url: SOURCE_URLS['HuggingFace'] },
+                { name: 'DeFiLlama', desc: 'TVL global crypto (capital disponible)', kpi: 'CFBR', status: 'ok', url: SOURCE_URLS['DeFiLlama'] },
+                { name: 'Lambda Labs', desc: 'Precios cloud GPU alternativos', kpi: 'SHPD', status: 'ok', url: SOURCE_URLS['Lambda Labs'] },
+                { name: 'FRED (Fed)', desc: 'Capacidad industrial macro', kpi: 'LTCR', status: 'warn', url: SOURCE_URLS['FRED'] },
             ];
             const grid = document.getElementById('sources-grid');
             grid.innerHTML = '';
@@ -601,6 +697,7 @@
                 div.innerHTML = `
                     <div class="source-name">${s.name}</div>
                     <div class="source-desc">${s.desc}</div>
+                    <div class="source-delta" style="font-size:0.65rem; color:var(--accent); margin-top:4px;">${s.url}</div>
                     <div class="source-status">
                         <span class="status-${s.status}">●</span> KPIs: ${s.kpi}
                     </div>

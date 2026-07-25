@@ -52,6 +52,9 @@ class IngestionPipeline:
             from app.external.binance import BinanceClient
             from app.external.lambdalabs import LambdaLabsScraper
             from app.external.fred_macro import FREDClient
+            from app.external.nicehash import NiceHashClient
+            from app.external.huggingface import HuggingFaceClient
+            from app.external.defillama import DeFiLlamaClient
             sources = [
                 VastAIClient(),
                 CoinGeckoClient(),
@@ -60,6 +63,9 @@ class IngestionPipeline:
                 BinanceClient(),
                 LambdaLabsScraper(),
                 FREDClient(),
+                NiceHashClient(),
+                HuggingFaceClient(),
+                DeFiLlamaClient(),
             ]
         else:
             from app.external.sec_edgar import SECDataSource
@@ -86,35 +92,42 @@ class IngestionPipeline:
             except Exception as e:
                 logger.error(f"Fallo en fuente {source.__class__.__name__}: {e}")
 
-        # Fase 2: Deduplicar y validar KPIs con multiples fuentes
-        # SHPD: puede venir de WhatToMine y LambdaLabs. Promediamos.
-        shpd_values = [r for r in all_records if r.get("kpi_code") == "SHPD"]
-        if len(shpd_values) > 1:
-            avg_shpd = sum(r["raw_value"] for r in shpd_values) / len(shpd_values)
-            logger.info(f"[CROSS-VALIDATION] SHPD de {len(shpd_values)} fuentes: "
-                        f"valores={[r['raw_value'] for r in shpd_values]}, promedio={avg_shpd:.2f}")
-            # Reemplazar todos los SHPD con el promedio, marcando fuente combinada
-            all_records = [r for r in all_records if r.get("kpi_code") != "SHPD"]
-            all_records.append({
-                "kpi_code": "SHPD",
-                "raw_value": avg_shpd,
+        # Fase 2: Deduplicar y validar KPIs con multiples fuentes (automático)
+        # Agrupar por KPI y promediar cuando hay múltiples fuentes
+        from collections import defaultdict
+        kpi_groups = defaultdict(list)
+        for r in all_records:
+            kpi_groups[r["kpi_code"]].append(r)
+        
+        deduped_records = []
+        for kpi, records in kpi_groups.items():
+            if len(records) == 1:
+                deduped_records.extend(records)
+                continue
+            
+            # Calcular estadísticas
+            values = [r["raw_value"] for r in records]
+            avg = sum(values) / len(values)
+            std_dev = (sum((v - avg) ** 2 for v in values) / len(values)) ** 0.5
+            
+            logger.info(f"[CROSS-VALIDATION] {kpi} de {len(records)} fuentes: "
+                        f"valores={[round(v, 2) for v in values]}, "
+                        f"promedio={avg:.2f}, std_dev={std_dev:.2f}")
+            
+            # Si std_dev > 30, alertar fuerte discrepancia entre fuentes
+            if std_dev > 30:
+                logger.warning(f"[ALTA_VARIABILIDAD] {kpi}: std_dev={std_dev:.2f} entre fuentes. "
+                               f"Fuentes: {[r['data_source'] for r in records]}")
+            
+            # Usar promedio como valor consenso
+            deduped_records.append({
+                "kpi_code": kpi,
+                "raw_value": avg,
                 "timestamp": datetime.now(timezone.utc),
-                "data_source": f"COMBINED({','.join(r['data_source'] for r in shpd_values)})",
+                "data_source": f"CONSENSUS({','.join(r['data_source'] for r in records)})",
             })
         
-        # CFBR: puede venir de CoinGecko y Binance. Promediamos.
-        cfbr_values = [r for r in all_records if r.get("kpi_code") == "CFBR"]
-        if len(cfbr_values) > 1:
-            avg_cfbr = sum(r["raw_value"] for r in cfbr_values) / len(cfbr_values)
-            logger.info(f"[CROSS-VALIDATION] CFBR de {len(cfbr_values)} fuentes: "
-                        f"valores={[r['raw_value'] for r in cfbr_values]}, promedio={avg_cfbr:.2f}")
-            all_records = [r for r in all_records if r.get("kpi_code") != "CFBR"]
-            all_records.append({
-                "kpi_code": "CFBR",
-                "raw_value": avg_cfbr,
-                "timestamp": datetime.now(timezone.utc),
-                "data_source": f"COMBINED({','.join(r['data_source'] for r in cfbr_values)})",
-            })
+        all_records = deduped_records
 
         # Fase 3: Validacion cruzada entre KPIs relacionados
         # GSPI y SHPD miden ambos precios GPU. Si divergen >50 puntos, alerta.
