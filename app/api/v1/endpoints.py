@@ -13,6 +13,7 @@ from app.schemas import (
 from app.services.calculator import CRICalculator
 from app.services.ingestion import IngestionPipeline
 from app.models import RiskIndex, TelemetryRecord
+from app.scenarios import get_mode_state, SCENARIOS, get_scenario_list, get_zone
 from datetime import datetime, timezone
 
 router = APIRouter(prefix="/api/v1")
@@ -22,22 +23,73 @@ def calculate_cri(db: Session = Depends(get_db)):
     """
     Dispara el proceso de normalizacion de telemetria pendiente
     y genera un nuevo registro CRI.
+    
+    Si el sistema esta en modo SIMULATION, usa los datos del escenario activo.
+    Si esta en modo REAL, usa datos reales del mercado.
     """
+    mode_state = get_mode_state()
+    
     try:
-        calculator = CRICalculator(db)
-        risk_index, metadata = calculator.calculate()
+        if mode_state.mode == mode_state.MODE_SIMULATION and mode_state.active_scenario:
+            # Modo simulacion: usar escenario predefinido
+            scenario = SCENARIOS[mode_state.active_scenario]
+            params = scenario["params"]
+            
+            # Calcular CRI manualmente
+            weights = {"GSPI": 0.25, "SHPD": 0.15, "LTCR": 0.20, "CFBR": 0.20, "UOR": 0.20}
+            cri_score = round(sum(params[k] * weights[k] for k in weights), 2)
+            risk_zone = get_zone(cri_score)
+            alerts_triggered = risk_zone == "CRITICAL"
+            
+            # Construir component_scores como espera el frontend
+            component_details = {}
+            colors = {"GSPI": "#f85149", "SHPD": "#d29922", "LTCR": "#58a6ff", "CFBR": "#a371f7", "UOR": "#3fb950"}
+            for kpi, raw_val in params.items():
+                component_details[kpi] = {
+                    "normalized_score": raw_val,
+                    "raw_value": raw_val,
+                    "weight": weights[kpi],
+                    "color": colors.get(kpi),
+                }
+            
+            # Guardar en DB para historial
+            risk_index = RiskIndex(
+                cri_score=cri_score,
+                risk_zone=risk_zone,
+                alerts_triggered="true" if alerts_triggered else "false",
+                timestamp=datetime.now(timezone.utc),
+            )
+            db.add(risk_index)
+            db.commit()
+            db.refresh(risk_index)
+            
+            return CalculateCRIResponse(
+                status="success",
+                data=RiskIndexSchema(
+                    index_id=str(risk_index.index_id),
+                    timestamp=risk_index.timestamp,
+                    cri_score=cri_score,
+                    risk_zone=risk_zone,
+                    alerts_triggered=alerts_triggered,
+                    component_scores=component_details,
+                ),
+            )
+        else:
+            # Modo real: calculo normal
+            calculator = CRICalculator(db)
+            risk_index, metadata = calculator.calculate()
 
-        return CalculateCRIResponse(
-            status="success",
-            data=RiskIndexSchema(
-                index_id=str(risk_index.index_id),
-                timestamp=risk_index.timestamp,
-                cri_score=risk_index.cri_score,
-                risk_zone=risk_index.risk_zone,
-                alerts_triggered=risk_index.alerts_triggered == "true",
-                component_scores=metadata.get("component_details"),
-            ),
-        )
+            return CalculateCRIResponse(
+                status="success",
+                data=RiskIndexSchema(
+                    index_id=str(risk_index.index_id),
+                    timestamp=risk_index.timestamp,
+                    cri_score=risk_index.cri_score,
+                    risk_zone=risk_index.risk_zone,
+                    alerts_triggered=risk_index.alerts_triggered == "true",
+                    component_scores=metadata.get("component_details"),
+                ),
+            )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -108,10 +160,45 @@ def get_sources_status(db: Session = Depends(get_db)):
     """
     Panel en tiempo real: estado de cada fuente de datos
     y ultimo delta recuperado.
+    
+    Si el sistema esta en modo SIMULATION, muestra los parametros
+    del escenario activo como fuentes 'SIMULATED'.
     """
+    mode_state = get_mode_state()
     now = datetime.now(timezone.utc)
     
-    # Para cada KPI, obtener el registro mas reciente
+    # Si esta en modo SIMULATION, generar datos del escenario
+    if mode_state.mode == mode_state.MODE_SIMULATION and mode_state.active_scenario:
+        scenario = SCENARIOS[mode_state.active_scenario]
+        params = scenario["params"]
+        
+        sources_data = []
+        for kpi, raw_val in params.items():
+            sources_data.append({
+                "kpi": kpi,
+                "raw_value": raw_val,
+                "normalized_score": raw_val,
+                "data_source": f"SIMULATION({scenario['id']})",
+                "timestamp": now.isoformat(),
+                "delta_seconds": 0.0,
+                "freshness": "SIMULATED",
+                "status": "SIMULATED",
+            })
+        
+        return {
+            "status": "success",
+            "mode": "SIMULATION",
+            "scenario": scenario["name"],
+            "timestamp": now.isoformat(),
+            "total_kpis": len(sources_data),
+            "active_kpis": 0,
+            "stale_kpis": 0,
+            "offline_kpis": 0,
+            "simulated_kpis": len(sources_data),
+            "sources": sources_data,
+        }
+    
+    # Modo REAL: obtener datos de la DB
     kpis = ["GSPI", "SHPD", "LTCR", "CFBR", "UOR"]
     sources_data = []
     
@@ -156,6 +243,7 @@ def get_sources_status(db: Session = Depends(get_db)):
     
     return {
         "status": "success",
+        "mode": "REAL",
         "timestamp": now.isoformat(),
         "total_kpis": len(kpis),
         "active_kpis": sum(1 for s in sources_data if s["status"] == "ACTIVE"),
@@ -270,43 +358,94 @@ def get_kpi_explanations():
 @router.post("/simulate-critical")
 def simulate_critical(db: Session = Depends(get_db)):
     """
-    Simula una situacion de riesgo CRITICAL para testing del dashboard y alertas.
-    Inserta telemetria artificial con valores altos de riesgo y calcula CRI.
-    
-    WARNING: Solo para testing. No usar en produccion.
+    DEPRECATED: Usar /simulate-scenario con id='supply_crisis' o 'crypto_crash'.
+    Mantiene compatibilidad hacia atras.
     """
-    from app.models import TelemetryRecord
-    from decimal import Decimal
+    mode_state = get_mode_state()
+    mode_state.set_scenario("supply_crisis")
     
-    ts = datetime.now(timezone.utc)
-    test_data = [
-        {"kpi_code": "GSPI", "raw_value": 95.0, "source": "SIMULATION"},
-        {"kpi_code": "SHPD", "raw_value": 90.0, "source": "SIMULATION"},
-        {"kpi_code": "LTCR", "raw_value": 85.0, "source": "SIMULATION"},
-        {"kpi_code": "CFBR", "raw_value": 88.0, "source": "SIMULATION"},
-        {"kpi_code": "UOR", "raw_value": 92.0, "source": "SIMULATION"},
-    ]
+    # Forzar calculo con escenario
+    return calculate_cri(db)
+
+
+@router.get("/mode")
+def get_mode():
+    """
+    Obtiene el estado actual del modo (REAL vs SIMULATION)
+    y el escenario activo si aplica.
+    """
+    mode_state = get_mode_state()
+    return {
+        "status": "success",
+        **mode_state.get_status(),
+    }
+
+@router.post("/mode")
+def set_mode(payload: dict):
+    """
+    Cambia el modo del sistema.
     
-    for rec in test_data:
-        telemetry = TelemetryRecord(
-            kpi_code=rec["kpi_code"],
-            timestamp=ts,
-            raw_value=Decimal(str(rec["raw_value"])),
-            data_source=rec["source"],
-        )
-        db.add(telemetry)
-    db.commit()
+    Payload: {"mode": "REAL" | "SIMULATION", "scenario_id": "optional"}
+    """
+    mode_state = get_mode_state()
+    new_mode = payload.get("mode", "REAL")
+    scenario_id = payload.get("scenario_id")
     
-    calculator = CRICalculator(db)
-    risk_index, metadata = calculator.calculate()
+    if new_mode not in (mode_state.MODE_REAL, mode_state.MODE_SIMULATION):
+        raise HTTPException(status_code=400, detail="Modo debe ser REAL o SIMULATION")
+    
+    mode_state.set_mode(new_mode)
+    
+    if scenario_id and new_mode == mode_state.MODE_SIMULATION:
+        if scenario_id not in SCENARIOS:
+            raise HTTPException(status_code=400, detail=f"Escenario invalido: {scenario_id}")
+        mode_state.set_scenario(scenario_id)
     
     return {
         "status": "success",
-        "message": "CRITICAL simulation executed",
-        "data": {
-            "cri_score": risk_index.cri_score,
-            "risk_zone": risk_index.risk_zone,
-            "alerts_triggered": risk_index.alerts_triggered == "true",
-            "component_scores": metadata.get("component_details"),
-        },
+        "message": f"Modo cambiado a {new_mode}",
+        **mode_state.get_status(),
     }
+
+@router.get("/scenarios")
+def list_scenarios():
+    """
+    Lista todos los escenarios predefinidos disponibles para simulacion.
+    """
+    return {
+        "status": "success",
+        "count": len(SCENARIOS),
+        "scenarios": get_scenario_list(),
+    }
+
+@router.post("/simulate-scenario")
+def simulate_scenario(payload: dict, db: Session = Depends(get_db)):
+    """
+    Activa un escenario de simulacion y calcula el CRI resultante.
+    
+    Payload: {"scenario_id": "gpu_shortage"}
+    
+    Escenarios disponibles:
+    - normal: Mercado Normal
+    - gpu_shortage: Escasez GPU
+    - crypto_crash: Crash Crypto
+    - bear_market: Bear Market
+    - bull_run: Bull Run
+    - supply_crisis: Crisis de Suministro
+    - regulatory_shock: Shock Regulatorio
+    - infrastructure_boom: Boom Infraestructura
+    - ai_winter: Invierno IA
+    - energy_crisis: Crisis Energetica
+    """
+    scenario_id = payload.get("scenario_id")
+    if not scenario_id:
+        raise HTTPException(status_code=400, detail="scenario_id requerido")
+    
+    if scenario_id not in SCENARIOS:
+        raise HTTPException(status_code=400, detail=f"Escenario invalido: {scenario_id}")
+    
+    mode_state = get_mode_state()
+    mode_state.set_scenario(scenario_id)
+    
+    # Calcular CRI con escenario
+    return calculate_cri(db)

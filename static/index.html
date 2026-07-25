@@ -264,6 +264,57 @@
             100% { opacity: 1; transform: scale(1); }
         }
 
+        /* Modo SIMULATION */
+        .simulation-banner {
+            background: linear-gradient(90deg, rgba(248,81,73,0.15), rgba(248,81,73,0.05)) !important;
+            border: 1px solid var(--danger) !important;
+        }
+        .simulation-badge {
+            background: var(--danger) !important;
+            color: #fff !important;
+        }
+        .scenario-card {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .scenario-card:hover {
+            border-color: var(--accent);
+            background: rgba(88,166,255,0.05);
+        }
+        .scenario-card.active {
+            border-color: var(--danger);
+            background: rgba(248,81,73,0.05);
+        }
+        .scenario-icon {
+            font-size: 1.5rem;
+            margin-bottom: 6px;
+        }
+        .scenario-name {
+            font-weight: 700;
+            font-size: 0.85rem;
+            margin-bottom: 4px;
+        }
+        .scenario-desc {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+        .scenario-cri {
+            font-size: 1.3rem;
+            font-weight: 700;
+        }
+        .scenario-zone {
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 12px;
+            display: inline-block;
+            margin-top: 4px;
+        }
+
         @media (max-width: 768px) {
             .grid { grid-template-columns: 1fr; }
             header { flex-direction: column; align-items: flex-start; gap: 15px; }
@@ -293,32 +344,49 @@
             </div>
         </header>
 
-        <div class="live-banner">
-            <div class="live-badge">LIVE</div>
+        <!-- MODO BANNER: Cambia entre LIVE (verde) y SIMULATION (rojo) -->
+        <div id="mode-banner" class="live-banner">
+            <div id="mode-badge" class="live-badge">LIVE</div>
             <div>
-                <div class="live-text">Datos reales del mercado en tiempo real</div>
+                <div class="live-text" id="mode-text">Datos reales del mercado en tiempo real</div>
                 <div class="live-url" id="live-urls">Conectando a APIs externas...</div>
             </div>
         </div>
 
-        <div class="card" style="margin-bottom:20px;">
-            <div class="card-title">Procedencia de Datos - URLs Externas</div>
+        <!-- SELECTOR DE ESCENARIOS (visible solo en modo SIMULATION) -->
+        <div class="card" id="scenario-panel" style="margin-bottom:20px; display:none;">
+            <div class="card-title">Escenarios de Simulacion</div>
+            <div id="scenario-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:10px;">
+                <!-- Se llena dinamicamente -->
+            </div>
+            <div style="margin-top:12px; display:flex; gap:10px; align-items:center;">
+                <button onclick="setRealMode()" style="background:var(--success); color:#000;">Volver a Datos Reales</button>
+                <span style="font-size:0.8rem; color:var(--text-muted);">
+                    Los escenarios usan valores predefinidos para simular condiciones de mercado.
+                    No consultan APIs externas.
+                </span>
+            </div>
+        </div>
+
+        <!-- PANEL DE DATOS REALES (visible solo en modo REAL) -->
+        <div class="card" id="real-data-panel" style="margin-bottom:20px;">
+            <div class="card-title">Procedencia de Datos - URLs Externas (10 fuentes)</div>
             <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:10px; font-size:0.75rem; color:var(--text-muted);">
-                <div><span style="color:var(--success)">●</span> <strong>Vast.ai</strong> → https://vast.ai/api/v0/bundles (GSPI + UOR)</div>
-                <div><span style="color:var(--success)">●</span> <strong>CoinGecko</strong> → https://api.coingecko.com/api/v3/global (CFBR)</div>
-                <div><span style="color:var(--success)">●</span> <strong>Binance</strong> → https://api.binance.com/api/v3/ticker/24hr (CFBR)</div>
-                <div><span style="color:var(--success)">●</span> <strong>WhatToMine</strong> → https://whattomine.com/gpus (SHPD)</div>
-                <div><span style="color:var(--success)">●</span> <strong>Yahoo Finance</strong> → query1.finance.yahoo.com/v8/finance/chart (LTCR)</div>
-                <div><span style="color:var(--success)">●</span> <strong>NiceHash</strong> → https://api2.nicehash.com/main/api/v2/public (SHPD + UOR)</div>
-                <div><span style="color:var(--success)">●</span> <strong>HuggingFace</strong> → https://huggingface.co/api/trending (UOR + SHPD)</div>
-                <div><span style="color:var(--success)">●</span> <strong>DeFiLlama</strong> → https://api.llama.fi/v2/chains (CFBR)</div>
-                <div><span style="color:var(--warning)">●</span> <strong>Lambda Labs</strong> → https://lambdalabs.com/cloud (SHPD - puede fallar por bloqueo)</div>
-                <div><span style="color:var(--warning)">●</span> <strong>FRED</strong> → https://api.stlouisfed.org/fred (LTCR - requiere API key)</div>
+                <div><span style="color:var(--success)">●</span> <strong>Vast.ai</strong> → vast.ai/api/v0/bundles (GSPI + UOR)</div>
+                <div><span style="color:var(--success)">●</span> <strong>CoinGecko</strong> → api.coingecko.com/api/v3/global (CFBR)</div>
+                <div><span style="color:var(--success)">●</span> <strong>Binance</strong> → api.binance.com/api/v3/ticker/24hr (CFBR)</div>
+                <div><span style="color:var(--success)">●</span> <strong>WhatToMine</strong> → whattomine.com/gpus (SHPD)</div>
+                <div><span style="color:var(--success)">●</span> <strong>Yahoo Finance</strong> → query1.finance.yahoo.com (LTCR)</div>
+                <div><span style="color:var(--success)">●</span> <strong>NiceHash</strong> → api2.nicehash.com (SHPD + UOR)</div>
+                <div><span style="color:var(--success)">●</span> <strong>HuggingFace</strong> → huggingface.co/api/trending (UOR + SHPD)</div>
+                <div><span style="color:var(--success)">●</span> <strong>DeFiLlama</strong> → api.llama.fi/v2/chains (CFBR)</div>
+                <div><span style="color:var(--warning)">●</span> <strong>Lambda Labs</strong> → lambdalabs.com/cloud (SHPD - puede fallar)</div>
+                <div><span style="color:var(--warning)">●</span> <strong>FRED</strong> → api.stlouisfed.org/fred (LTCR - requiere API key)</div>
             </div>
             <div style="margin-top:12px; font-size:0.75rem; color:var(--text-muted); border-top:1px solid var(--border); padding-top:8px;">
-                <strong>Nota:</strong> Todos los requests son HTTP directos a servidores externos. No hay base de datos mock ni valores hardcodeados.
-                El sistema consulta <strong>10 fuentes</strong> y calcula un <strong>valor consenso</strong> por KPI promediando todas las fuentes disponibles.
-                Si una fuente falla, se descarta automáticamente. Si la desviación estándar entre fuentes supera 30 puntos, se genera una alerta de alta variabilidad.
+                <strong>Modo REAL:</strong> El sistema consulta <strong>10 fuentes externas</strong> vía HTTP y calcula un <strong>valor consenso</strong> por KPI.
+                Si una fuente falla, se descarta. Si std_dev > 30 entre fuentes, alerta de alta variabilidad.
+                <button onclick="showScenarioPanel()" style="margin-left:10px; background:var(--warning); color:#000; font-size:0.7rem; padding:4px 10px;">Probar Escenarios</button>
             </div>
         </div>
 
@@ -752,6 +820,112 @@
             loadExplanations();
         }
 
+        // ============================================================
+        // SISTEMA DE MODOS Y ESCENARIOS
+        // ============================================================
+        let currentMode = 'REAL';
+        let currentScenario = null;
+
+        async function loadMode() {
+            try {
+                const data = await apiCall('GET', '/mode');
+                currentMode = data.mode;
+                currentScenario = data.active_scenario;
+                updateModeUI();
+                if (currentMode === 'SIMULATION') {
+                    loadScenarios();
+                }
+            } catch (e) {
+                log('Error cargando modo', 'error');
+            }
+        }
+
+        function updateModeUI() {
+            const banner = document.getElementById('mode-banner');
+            const badge = document.getElementById('mode-badge');
+            const text = document.getElementById('mode-text');
+            const realPanel = document.getElementById('real-data-panel');
+            const scenarioPanel = document.getElementById('scenario-panel');
+
+            if (currentMode === 'SIMULATION') {
+                banner.className = 'live-banner simulation-banner';
+                badge.className = 'live-badge simulation-badge';
+                badge.textContent = 'SIMULATION';
+                const scenarioName = currentScenario ? SCENARIOS[currentScenario]?.name || currentScenario : 'Sin escenario';
+                text.innerHTML = `<span style="color:var(--danger)">MODO SIMULACION</span> - Escenario: <strong>${scenarioName}</strong>`;
+                realPanel.style.display = 'none';
+                scenarioPanel.style.display = 'block';
+                log('Modo SIMULACION activo', 'error');
+            } else {
+                banner.className = 'live-banner';
+                badge.className = 'live-badge';
+                badge.textContent = 'LIVE';
+                text.textContent = 'Datos reales del mercado en tiempo real';
+                realPanel.style.display = 'block';
+                scenarioPanel.style.display = 'none';
+            }
+        }
+
+        async function setRealMode() {
+            try {
+                await apiCall('POST', '/mode', { mode: 'REAL' });
+                currentMode = 'REAL';
+                currentScenario = null;
+                updateModeUI();
+                log('Cambiado a modo REAL', 'success');
+                await calculateCRI();
+                await loadSourcesPanel();
+            } catch (e) {
+                log('Error cambiando a modo real', 'error');
+            }
+        }
+
+        function showScenarioPanel() {
+            document.getElementById('real-data-panel').style.display = 'none';
+            document.getElementById('scenario-panel').style.display = 'block';
+            loadScenarios();
+        }
+
+        async function loadScenarios() {
+            try {
+                const data = await apiCall('GET', '/scenarios');
+                const grid = document.getElementById('scenario-grid');
+                grid.innerHTML = '';
+                data.scenarios.forEach(s => {
+                    const zoneClass = s.cri_preview <= 30 ? 'zone-low' : s.cri_preview <= 65 ? 'zone-moderate' : 'zone-critical';
+                    const zoneColor = s.cri_preview <= 30 ? 'var(--success)' : s.cri_preview <= 65 ? 'var(--warning)' : 'var(--danger)';
+                    const div = document.createElement('div');
+                    div.className = 'scenario-card' + (currentScenario === s.id ? ' active' : '');
+                    div.onclick = () => selectScenario(s.id);
+                    div.innerHTML = `
+                        <div class="scenario-icon">${s.icon}</div>
+                        <div class="scenario-name" style="color:${s.color}">${s.name}</div>
+                        <div class="scenario-desc">${s.description}</div>
+                        <div class="scenario-cri" style="color:${zoneColor}">${s.cri_preview}</div>
+                        <div class="scenario-zone ${zoneClass}">${s.cri_preview <= 30 ? 'LOW' : s.cri_preview <= 65 ? 'MODERATE' : 'CRITICAL'}</div>
+                    `;
+                    grid.appendChild(div);
+                });
+            } catch (e) {
+                log('Error cargando escenarios', 'error');
+            }
+        }
+
+        async function selectScenario(scenarioId) {
+            try {
+                log(`Activando escenario: ${scenarioId}...`, 'info');
+                await apiCall('POST', '/simulate-scenario', { scenario_id: scenarioId });
+                currentMode = 'SIMULATION';
+                currentScenario = scenarioId;
+                updateModeUI();
+                log(`Escenario ${scenarioId} activado`, 'error');
+                await calculateCRI();
+                await loadSourcesPanel();
+            } catch (e) {
+                log('Error activando escenario', 'error');
+            }
+        }
+
         // Auto-refresh cada 30 segundos
         setInterval(() => {
             if (document.visibilityState === 'visible') {
@@ -764,6 +938,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             renderSourcesStatic();
             loadHistory();
+            loadMode();
             loadLatestCRI();
             loadSourcesPanel();
             loadExplanations();
