@@ -404,11 +404,38 @@
                 </div>
             </div>
 
+            <!-- NUEVO: TMI Card -->
+            <div class="card">
+                <div class="realtime-indicator" id="tmi-indicator">
+                    <div class="pulse" id="tmi-pulse"></div>
+                    <span>Temperatura Mercado - <span id="tmi-timestamp">--</span></span>
+                </div>
+                <div class="card-title">TMI - Temperature Market Index</div>
+                <div class="big-number" id="tmi-score" style="color:var(--warning)">--</div>
+                <div id="tmi-zone" class="zone-badge zone-moderate">SIN DATOS</div>
+                <div style="margin-top:15px; font-size:0.8rem; color:var(--text-muted)">
+                    Coverage: <span id="tmi-coverage">--</span>% | 
+                    <span id="tmi-components-summary">--</span> componentes
+                </div>
+            </div>
+
             <div class="card">
                 <div class="card-title">Historial CRI (ultimas 24h)</div>
                 <div class="chart-container">
                     <canvas id="historyChart"></canvas>
                 </div>
+            </div>
+        </div>
+
+        <!-- NUEVO: Componentes TMI -->
+        <div class="card" id="tmi-components-card">
+            <div class="card-title">Componentes TMI - Temperatura del Mercado IA</div>
+            <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:12px;">
+                El TMI mide qué tan "caliente" está el mercado: actividad R&D, sentimiento crypto, interés técnico, infraestructura activa.
+                <button onclick="loadTMI()" style="margin-left:10px; background:var(--accent); font-size:0.7rem; padding:4px 10px;">Recalcular TMI</button>
+            </div>
+            <div class="kpi-grid" id="tmi-components-grid">
+                <!-- Se llena dinamicamente -->
             </div>
         </div>
 
@@ -866,6 +893,81 @@
             }
         }
 
+        // ============================================================
+        // TMI - TEMPERATURE MARKET INDEX
+        // ============================================================
+        async function loadTMI() {
+            try {
+                const data = await apiCall('GET', '/calculate-tmi');
+                const tmi = data.data;
+                
+                if (tmi.tmi_score !== null) {
+                    document.getElementById('tmi-score').textContent = tmi.tmi_score;
+                    const zoneEl = document.getElementById('tmi-zone');
+                    zoneEl.textContent = tmi.zone;
+                    zoneEl.className = 'zone-badge ' + (
+                        tmi.zone === 'COLD' ? 'zone-low' :
+                        tmi.zone === 'WARM' ? 'zone-moderate' : 'zone-critical'
+                    );
+                    document.getElementById('tmi-coverage').textContent = tmi.coverage_pct;
+                    document.getElementById('tmi-components-summary').textContent = 
+                        `${5 - tmi.missing_components.length}/5`;
+                    document.getElementById('tmi-timestamp').textContent = new Date().toLocaleTimeString('es-ES');
+                    
+                    // Color del score según temperatura
+                    const scoreEl = document.getElementById('tmi-score');
+                    if (tmi.tmi_score <= 30) scoreEl.style.color = '#58a6ff';
+                    else if (tmi.tmi_score <= 70) scoreEl.style.color = '#d29922';
+                    else scoreEl.style.color = '#f85149';
+                    
+                    log(`TMI: ${tmi.tmi_score} (${tmi.zone}) - Coverage ${tmi.coverage_pct}%`, 'info');
+                    
+                    // Render componentes
+                    renderTMIComponents(tmi.component_details);
+                } else {
+                    document.getElementById('tmi-score').textContent = 'N/A';
+                    document.getElementById('tmi-zone').textContent = 'NO DATA';
+                    log('TMI: Sin datos disponibles', 'warn');
+                }
+            } catch (e) {
+                log('Error cargando TMI', 'error');
+            }
+        }
+        
+        function renderTMIComponents(details) {
+            const grid = document.getElementById('tmi-components-grid');
+            grid.innerHTML = '';
+            
+            const labels = {
+                'fear_greed': 'Fear & Greed',
+                'arxiv_velocity': 'arXiv Papers',
+                'hn_activity': 'Hacker News',
+                'hashrate': 'Hashrate GPU',
+                'ai_tokens': 'AI Tokens',
+            };
+            const colors = {
+                'fear_greed': '#a371f7',
+                'arxiv_velocity': '#58a6ff',
+                'hn_activity': '#d29922',
+                'hashrate': '#3fb950',
+                'ai_tokens': '#f85149',
+            };
+            
+            for (const [key, info] of Object.entries(details)) {
+                const div = document.createElement('div');
+                div.className = 'kpi-item';
+                const val = info.value !== null ? info.value.toFixed(1) : '--';
+                const barWidth = info.value !== null ? info.value : 0;
+                div.innerHTML = `
+                    <div class="kpi-name">${labels[key] || key}</div>
+                    <div class="kpi-value" style="color:${colors[key] || '#fff'}">${val}</div>
+                    <div class="kpi-source">weight: ${(info.weight * 100).toFixed(0)}% | contrib: ${info.contribution !== null ? info.contribution.toFixed(1) : '--'}</div>
+                    <div class="kpi-bar"><div class="kpi-bar-fill" style="width:${barWidth}%; background:${colors[key] || '#fff'}"></div></div>
+                `;
+                grid.appendChild(div);
+            }
+        }
+
         async function setRealMode() {
             try {
                 await apiCall('POST', '/mode', { mode: 'REAL' });
@@ -930,6 +1032,7 @@
         setInterval(() => {
             if (document.visibilityState === 'visible') {
                 loadSourcesPanel();
+                loadTMI();
                 document.getElementById('live-timestamp').textContent = new Date().toLocaleTimeString('es-ES');
             }
         }, 30000);
@@ -942,6 +1045,7 @@
             loadLatestCRI();
             loadSourcesPanel();
             loadExplanations();
+            loadTMI();
             log('Dashboard CRI inicializado', 'success');
             log('Click en "Ingesta Real" para cargar datos del mercado', 'info');
         });

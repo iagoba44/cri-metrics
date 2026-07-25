@@ -4,6 +4,7 @@ from decimal import Decimal
 from typing import List, Dict
 from sqlalchemy.orm import Session
 from app.models import TelemetryRecord
+from app.services.source_weights import compute_weighted_average, has_enough_confidence
 import logging
 
 logger = logging.getLogger(__name__)
@@ -92,8 +93,7 @@ class IngestionPipeline:
             except Exception as e:
                 logger.error(f"Fallo en fuente {source.__class__.__name__}: {e}")
 
-        # Fase 2: Deduplicar y validar KPIs con multiples fuentes (automático)
-        # Agrupar por KPI y promediar cuando hay múltiples fuentes
+        # Fase 2: Deduplicar con PONDERACIÓN de fuentes
         from collections import defaultdict
         kpi_groups = defaultdict(list)
         for r in all_records:
@@ -105,26 +105,34 @@ class IngestionPipeline:
                 deduped_records.extend(records)
                 continue
             
-            # Calcular estadísticas
+            # Promedio PONDERADO por confianza de fuente
+            weighted_avg, used_sources, total_weight = compute_weighted_average(records)
+            
+            # Calcular std_dev para alertas
             values = [r["raw_value"] for r in records]
-            avg = sum(values) / len(values)
-            std_dev = (sum((v - avg) ** 2 for v in values) / len(values)) ** 0.5
+            simple_avg = sum(values) / len(values)
+            std_dev = (sum((v - simple_avg) ** 2 for v in values) / len(values)) ** 0.5
             
             logger.info(f"[CROSS-VALIDATION] {kpi} de {len(records)} fuentes: "
                         f"valores={[round(v, 2) for v in values]}, "
-                        f"promedio={avg:.2f}, std_dev={std_dev:.2f}")
+                        f"ponderado={weighted_avg:.2f}, peso_total={total_weight}, "
+                        f"std_dev={std_dev:.2f}, fuentes={used_sources}")
             
-            # Si std_dev > 30, alertar fuerte discrepancia entre fuentes
+            # Si std_dev > 30, alertar fuerte discrepancia
             if std_dev > 30:
                 logger.warning(f"[ALTA_VARIABILIDAD] {kpi}: std_dev={std_dev:.2f} entre fuentes. "
                                f"Fuentes: {[r['data_source'] for r in records]}")
             
-            # Usar promedio como valor consenso
+            # Verificar confianza mínima
+            if not has_enough_confidence(kpi, len(used_sources), total_weight):
+                logger.warning(f"[CONFIANZA_BAJA] {kpi}: {len(used_sources)} fuentes, peso={total_weight}. "
+                               f"Umbral no alcanzado. Resultado puede ser poco fiable.")
+            
             deduped_records.append({
                 "kpi_code": kpi,
-                "raw_value": avg,
+                "raw_value": weighted_avg,
                 "timestamp": datetime.now(timezone.utc),
-                "data_source": f"CONSENSUS({','.join(r['data_source'] for r in records)})",
+                "data_source": f"WEIGHTED({','.join(used_sources)};w={total_weight})",
             })
         
         all_records = deduped_records

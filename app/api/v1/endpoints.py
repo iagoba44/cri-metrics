@@ -407,6 +407,42 @@ def set_mode(payload: dict):
         **mode_state.get_status(),
     }
 
+@router.get("/source-weights")
+def get_source_weights():
+    """
+    Retorna los pesos actuales de cada fuente para el cálculo de consenso.
+    """
+    from app.services.source_weights import DEFAULT_SOURCE_WEIGHTS
+    return {
+        "status": "success",
+        "weights": DEFAULT_SOURCE_WEIGHTS,
+        "description": "Pesos de confianza por fuente (0-1). Mayor peso = más influencia en el promedio ponderado.",
+    }
+
+@router.get("/calculate-tmi")
+def calculate_tmi():
+    """
+    Calcula el Temperature Market Index (TMI).
+    Mide la temperatura del mercado IA usando 5 componentes:
+    - Fear & Greed Index (sentimiento crypto)
+    - arXiv velocity (papers ML/día)
+    - HN activity (stories IA/GPU en HackerNews)
+    - Hashrate global (GPUs trabajando)
+    - AI tokens performance (rendimiento tokens IA)
+    """
+    try:
+        from app.services.tmi_calculator import TMICalculator
+        components = TMICalculator.fetch_all_components()
+        calc = TMICalculator()
+        result = calc.calculate(components)
+        
+        return {
+            "status": "success",
+            "data": result,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error calculando TMI: {str(e)}")
+
 @router.get("/scenarios")
 def list_scenarios():
     """
