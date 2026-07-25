@@ -161,14 +161,32 @@ class TMICalculator:
             logger.error(f"[TMI] CoinGecko AI falló: {e}")
             components["ai_tokens"] = None
 
-        # 6. News Coverage (opcional, requiere API key)
+        # 6. News Coverage (pipeline semántico: RSS + embeddings + sentimiento)
         try:
-            from app.external.newsapi import NewsAPIClient
-            nw = NewsAPIClient()
-            components["news_coverage"] = nw.compute_tmi_component()
+            from app.external.rss_feeder import RSSFeeder
+            from app.services.news_validator import NewsValidator
+            from app.services.sentiment_extractor import SentimentExtractor
+
+            feeder = RSSFeeder()
+            raw_articles = feeder.fetch_all(max_per_feed=8)
+            validator = NewsValidator()
+            validated = validator.validate_batch(raw_articles)
+            news_score = validator.compute_relevance_score(validated)
+            components["news_coverage"] = news_score
+
+            # Log detallado
+            sentiment = SentimentExtractor().extract(validated)
+            logger.info(f"[TMI] News pipeline: {len(raw_articles)} raw -> {len(validated)} validados -> score={news_score}")
         except Exception as e:
-            logger.error(f"[TMI] NewsAPI falló: {e}")
-            components["news_coverage"] = None
+            logger.error(f"[TMI] News pipeline falló: {e}")
+            # Fallback: NewsAPI simple si el pipeline falla
+            try:
+                from app.external.newsapi import NewsAPIClient
+                nw = NewsAPIClient()
+                components["news_coverage"] = nw.compute_tmi_component()
+            except Exception as e2:
+                logger.error(f"[TMI] NewsAPI fallback también falló: {e2}")
+                components["news_coverage"] = None
         
         # 7. AI Revenue (AlphaVantage - opcional, requiere API key)
         try:

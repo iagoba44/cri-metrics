@@ -3,7 +3,7 @@
 <html class="dark" lang="en"><head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>CRI Metrics v2.4 | Mission Control</title>
+<title>CRI Metrics v2.6 | Consensus AI</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
@@ -566,6 +566,75 @@
 </div>
 </div>
 
+        <!-- Consensus Diff Panel -->
+        <div class="glass-panel p-6 rounded-xl">
+            <div class="flex justify-between items-start mb-6">
+                <div>
+                    <h3 class="font-headline-sm text-headline-sm text-on-surface">Consensus Diff (AI Committee)</h3>
+                    <p class="font-label-caps text-[10px] text-on-surface-variant mt-1">Cualitativo vs Algorítmico</p>
+                </div>
+                <div id="consensus-alert-badge"></div>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="bg-surface-container-low p-3 rounded border border-outline-variant">
+                    <p class="font-label-caps text-[9px] text-on-surface-variant mb-1">AI RISK SCORE</p>
+                    <p class="font-metric-lg text-metric-lg text-on-surface" id="consensus-ai-score">--</p>
+                </div>
+                <div class="bg-surface-container-low p-3 rounded border border-outline-variant">
+                    <p class="font-label-caps text-[9px] text-on-surface-variant mb-1">ALGORITHMIC CRI</p>
+                    <p class="font-metric-lg text-metric-lg text-on-surface" id="consensus-cri-score">--</p>
+                </div>
+                <div class="bg-surface-container-low p-3 rounded border border-outline-variant">
+                    <p class="font-label-caps text-[9px] text-on-surface-variant mb-1">DIVERGENCE (Δ)</p>
+                    <p class="font-metric-lg text-metric-lg" id="consensus-diff" style="color:var(--success-glow)">--</p>
+                </div>
+                <div class="bg-surface-container-low p-3 rounded border border-outline-variant">
+                    <p class="font-label-caps text-[9px] text-on-surface-variant mb-1">LLMs ACTIVE</p>
+                    <p class="font-metric-lg text-metric-lg text-on-surface" id="consensus-llm-count">--</p>
+                </div>
+            </div>
+            <div class="mt-4 text-on-surface-variant font-body-md text-[12px]" id="consensus-reasoning"></div>
+        </div>
+
+        <!-- Algorithmic Status Panel -->
+        <div class="glass-panel p-6 rounded-xl">
+            <h3 class="font-headline-sm text-headline-sm text-on-surface mb-6">Algorithmic Enhancements</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-surface-container-low p-3 rounded border border-outline-variant">
+                    <p class="font-label-caps text-[9px] text-on-surface-variant mb-2">Z-SCORE VOLATILITY</p>
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="font-metric-sm text-[12px] text-on-surface-variant">Current Z</span>
+                        <span class="font-metric-sm text-metric-sm" id="algo-zscore">--</span>
+                    </div>
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="font-metric-sm text-[12px] text-on-surface-variant">Mean (7d)</span>
+                        <span class="font-metric-sm text-metric-sm" id="algo-zmean">--</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="font-metric-sm text-[12px] text-on-surface-variant">Alert</span>
+                        <span class="font-label-caps text-[10px]" id="algo-zalert">NORMAL</span>
+                    </div>
+                </div>
+                <div class="bg-surface-container-low p-3 rounded border border-outline-variant">
+                    <p class="font-label-caps text-[9px] text-on-surface-variant mb-2">EMA SMOOTHING (α=0.3)</p>
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="font-metric-sm text-[12px] text-on-surface-variant">Raw CRI</span>
+                        <span class="font-metric-sm text-metric-sm" id="algo-ema-raw">--</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="font-metric-sm text-[12px] text-on-surface-variant">EMA CRI</span>
+                        <span class="font-metric-sm text-metric-sm" id="algo-ema-smoothed">--</span>
+                    </div>
+                </div>
+                <div class="bg-surface-container-low p-3 rounded border border-outline-variant">
+                    <p class="font-label-caps text-[9px] text-on-surface-variant mb-2">WEIGHT DECAY</p>
+                    <div class="space-y-1 text-[11px] font-metric-sm" id="algo-decay-list">
+                        <span class="text-on-surface-variant">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Historical Charts -->
         <div class="glass-panel p-6 rounded-xl">
             <h3 class="font-headline-sm text-headline-sm text-on-surface mb-6">Historical Trends (24h)</h3>
@@ -872,6 +941,10 @@
         // Update history charts
         updateHistoryCharts();
 
+        // Consensus Diff (non-blocking)
+        updateConsensusDiff();
+        updateAlgorithmicStatus();
+
         logToTerminal('SYSTEM: Dashboard synchronized with live market data', 'system');
     }
 
@@ -1143,6 +1216,83 @@
             tmiHistoryChart.data.labels = tmiLabels.length ? tmiLabels : criLabels;
             tmiHistoryChart.data.datasets[0].data = tmiData.length ? tmiData : criData.map(() => null);
             tmiHistoryChart.update('none');
+        }
+    }
+
+    // --- Consensus Diff Panel ---
+    async function updateConsensusDiff() {
+        const result = await apiCall('GET', '/consensus-diff');
+        if (!result || !result.data) return;
+        const d = result.data;
+        document.getElementById('consensus-ai-score').innerText = d.ai_risk_score !== null ? d.ai_risk_score : 'N/A';
+        document.getElementById('consensus-cri-score').innerText = d.cri_algoritmico !== null ? d.cri_algoritmico : 'N/A';
+        document.getElementById('consensus-llm-count').innerText = d.committee_size + '/3';
+        
+        const diffEl = document.getElementById('consensus-diff');
+        if (d.diff !== null) {
+            diffEl.innerText = d.diff;
+            if (d.diff_alert) {
+                diffEl.style.color = '#f85149';
+                diffEl.className = 'font-metric-lg text-metric-lg';
+                document.getElementById('consensus-alert-badge').innerHTML = '<span class="bg-danger-alert/20 border border-danger-alert rounded px-2 py-1 font-label-caps text-[10px] text-danger-alert">DIVERGENCIA DETECTADA</span>';
+                logToTerminal(`WARN: Consenso IA diverge del CRI algorítmico (Δ=${d.diff})`, 'warn');
+            } else {
+                diffEl.style.color = '#3fb950';
+                document.getElementById('consensus-alert-badge').innerHTML = '';
+            }
+        }
+        
+        // Reasoning
+        const reasoningDiv = document.getElementById('consensus-reasoning');
+        reasoningDiv.innerHTML = '';
+        if (d.individual) {
+            d.individual.forEach(r => {
+                const p = document.createElement('p');
+                const color = r.score !== null ? '#dae3ee' : '#8b919d';
+                p.innerHTML = `<span style="color:#58a6ff">[${r.llm}]</span> <span style="color:${color}">${r.score !== null ? r.score : 'N/A'}</span> — ${r.reasoning || ''}`;
+                p.className = 'mb-1';
+                reasoningDiv.appendChild(p);
+            });
+        }
+    }
+
+    // --- Algorithmic Status Panel ---
+    async function updateAlgorithmicStatus() {
+        const result = await apiCall('GET', '/algorithmic-status');
+        if (!result) return;
+        const d = result;
+        
+        if (d.z_score) {
+            document.getElementById('algo-zscore').innerText = d.z_score.z_score;
+            document.getElementById('algo-zmean').innerText = d.z_score.mean;
+            const alertEl = document.getElementById('algo-zalert');
+            alertEl.innerText = d.z_score.severity;
+            if (d.z_score.alert) {
+                alertEl.style.color = '#f85149';
+            } else {
+                alertEl.style.color = '#3fb950';
+            }
+        }
+        
+        if (d.ema) {
+            const raw = d.ema.last_24h ? d.ema.last_24h[d.ema.last_24h.length - 1] : '--';
+            document.getElementById('algo-ema-raw').innerText = raw !== null ? raw : '--';
+            document.getElementById('algo-ema-smoothed').innerText = d.ema.current !== null ? d.ema.current : '--';
+        }
+        
+        if (d.decay) {
+            const list = document.getElementById('algo-decay-list');
+            list.innerHTML = '';
+            if (d.decay.effective_weights) {
+                Object.entries(d.decay.effective_weights).forEach(([kpi, weight]) => {
+                    const div = document.createElement('div');
+                    div.className = 'flex justify-between py-0.5';
+                    const base = d.decay.report && d.decay.report[kpi] ? d.decay.report[kpi].confidence : 100;
+                    const color = base > 80 ? '#3fb950' : base > 50 ? '#d29922' : '#f85149';
+                    div.innerHTML = `<span class="text-on-surface-variant">${kpi}</span><span style="color:${color}">${weight} (${base}%)</span>`;
+                    list.appendChild(div);
+                });
+            }
         }
     }
 

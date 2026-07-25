@@ -15,7 +15,7 @@ from app.services.ingestion import IngestionPipeline
 from app.models import RiskIndex, TelemetryRecord
 from app.scenarios import get_mode_state, SCENARIOS, get_scenario_list, get_zone
 from app.services.alerts import get_alert_service
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 router = APIRouter(prefix="/api/v1")
 
@@ -544,3 +544,157 @@ def simulate_scenario(payload: dict, db: Session = Depends(get_db)):
     
     # Calcular CRI con escenario
     return calculate_cri(db)
+
+
+@router.get("/news-pipeline")
+def run_news_pipeline():
+    """
+    Ejecuta el pipeline completo de validación de noticias:
+    1. RSS feeds (Reuters, HN, TechCrunch)
+    2. Validación semántica (embeddings all-MiniLM-L6-v2)
+    3. Extracción de sentimiento estructurado (Capex, Demanda, Regulatorio)
+    """
+    try:
+        from app.external.rss_feeder import RSSFeeder
+        from app.services.news_validator import NewsValidator
+        from app.services.sentiment_extractor import SentimentExtractor
+
+        # 1. RSS
+        feeder = RSSFeeder()
+        raw_articles = feeder.fetch_all(max_per_feed=10)
+        
+        # 2. Validación semántica
+        validator = NewsValidator()
+        validated = validator.validate_batch(raw_articles)
+
+        # 3. Sentimiento estructurado
+        extractor = SentimentExtractor()
+        sentiment = extractor.extract(validated)
+
+        # 4. Score para TMI
+        relevance = validator.compute_relevance_score(validated)
+
+        return {
+            "status": "success",
+            "total_raw": len(raw_articles),
+            "validated": len(validated),
+            "articles": validated[:20],
+            "sentiment": sentiment,
+            "tmi_news_score": relevance,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en news-pipeline: {str(e)}")
+
+
+@router.get("/consensus-diff")
+async def get_consensus_diff(db: Session = Depends(get_db)):
+    """
+    Ejecuta el Comité de Riesgo (Consensus Diff).
+    Toma snapshot de CRI, TMI, noticias validadas y consulta LLMs.
+    Retorna el score promedio de los LLMs y el diferencial con CRI algorítmico.
+    """
+    try:
+        from app.services.consensus_diff import get_consensus_diff
+        from app.models import RiskIndex, TMISnapshot
+
+        # Obtener última data disponible
+        latest_cri = db.query(RiskIndex).order_by(RiskIndex.timestamp.desc()).first()
+        latest_tmi = db.query(TMISnapshot).order_by(TMISnapshot.timestamp.desc()).first()
+
+        # Calcular delta 24h
+        cri_delta = 0.0
+        if latest_cri:
+            historic = (
+                db.query(RiskIndex)
+                .filter(RiskIndex.timestamp >= (datetime.now(timezone.utc) - timedelta(hours=24)))
+                .order_by(RiskIndex.timestamp.asc())
+                .all()
+            )
+            if len(historic) >= 2:
+                cri_delta = float(historic[-1].cri_score) - float(historic[0].cri_score)
+
+        # Obtener noticias validadadas
+        mode_state = get_mode_state()
+        news = []
+        try:
+            from app.external.rss_feeder import RSSFeeder
+            from app.services.news_validator import NewsValidator
+            feeder = RSSFeeder()
+            raw = feeder.fetch_all(max_per_feed=5)
+            validator = NewsValidator()
+            news = validator.validate_batch(raw)
+        except Exception as e:
+            logger.warning(f"[Consensus] Falló fetch de noticias: {e}")
+
+        snapshot = {
+            "cri_score": float(latest_cri.cri_score) if latest_cri else None,
+            "cri_zone": latest_cri.risk_zone if latest_cri else "UNKNOWN",
+            "tmi_score": float(latest_tmi.tmi_score) if latest_tmi else None,
+            "cri_delta_24h": round(cri_delta, 2),
+            "mode": mode_state.mode,
+            "validated_news": news[:10],
+        }
+
+        consensus = get_consensus_diff()
+        result = await consensus.run_committee(snapshot)
+
+        return {"status": "success", "data": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en consensus-diff: {str(e)}")
+
+
+@router.get("/algorithmic-status")
+def get_algorithmic_status(db: Session = Depends(get_db)):
+    """
+    Reporta el estado de las mejoras algorítmicas:
+    - Z-Score de CRI
+    - Pesos dinámicos por confianza (Data Decay)
+    - EMA del CRI
+    """
+    try:
+        from app.services.algorithmic_enhancements import (
+            get_zscore, get_decay_weights, get_cri_ema
+        )
+        from app.models import RiskIndex
+
+        history = (
+            db.query(RiskIndex)
+            .filter(RiskIndex.timestamp >= (datetime.now(timezone.utc) - timedelta(hours=24)))
+            .order_by(RiskIndex.timestamp.asc())
+            .all()
+        )
+
+        cri_values = [float(r.cri_score) for r in history]
+
+        # Z-Score
+        zscore_engine = get_zscore()
+        zscore_result = zscore_engine.compute(cri_values)
+
+        # EMA
+        ema_engine = get_cri_ema()
+        ema_engine.reset()
+        ema_values = [ema_engine.smooth(v) for v in cri_values]
+
+        # Decay
+        decay_engine = get_decay_weights()
+        for r in history[-5:]:  # últimas actualizaciones
+            decay_engine.record_update("GSPI")
+        decay_report = decay_engine.get_decay_report()
+        effective_weights = decay_engine.get_effective_weights()
+
+        return {
+            "status": "success",
+            "z_score": zscore_result,
+            "ema": {
+                "current": ema_values[-1] if ema_values else None,
+                "last_24h": ema_values,
+                "alpha": 0.3,
+            },
+            "decay": {
+                "report": decay_report,
+                "effective_weights": effective_weights,
+                "rate_per_hour": "5%",
+            },
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")

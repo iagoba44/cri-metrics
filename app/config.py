@@ -40,6 +40,16 @@ class Settings(BaseSettings):
     NEWSAPI_KEY: str = ""
     ALPHAVANTAGE_KEY: str = ""
     
+    # API Keys para Consensus Diff (comité de IA)
+    GEMINI_API_KEY: str = ""
+    GROQ_API_KEY: str = ""
+    
+    # Umbral para alerta por divergencia semántica
+    CONSENSUS_DIFF_THRESHOLD: float = 20.0
+    
+    # Configuración de news validator
+    NEWS_SIMILARITY_THRESHOLD: float = 0.35
+    
     model_config = SettingsConfigDict(env_file=".env")
 
 @lru_cache()
