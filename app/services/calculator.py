@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.models import TelemetryRecord, RiskIndex
 from app.config import get_settings
 from app.services.normalizer import Normalizer
-from app.services.alerts import AlertService
+from app.services.alerts import get_alert_service
 import json
 import logging
 
@@ -18,7 +18,6 @@ class CRICalculator:
 
     def __init__(self, db: Session):
         self.db = db
-        self.alert_service = AlertService()
 
     def get_latest_telemetry(self) -> Dict[str, TelemetryRecord]:
         """
@@ -123,7 +122,7 @@ class CRICalculator:
 
         # Disparar alertas si aplica
         if alerts_triggered:
-            self.alert_service.send_alert(risk_index, component_details)
+            get_alert_service().check_and_alert(cri_float)
 
         metadata = {
             "component_details": component_details,

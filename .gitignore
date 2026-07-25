@@ -51,6 +51,6 @@ htmlcov/
 .env
 .env.local
 
-# Render no necesita
-Dockerfile
-docker-compose.yml
+# Docker (descomentar si no se usa Docker)
+# Dockerfile
+# docker-compose.yml

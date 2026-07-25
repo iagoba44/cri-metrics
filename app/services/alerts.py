@@ -1,68 +1,71 @@
-"""Sistema de alertas para umbrales críticos."""
+"""Servicio de alertas para CRI Metrics.
+Envia notificaciones via webhook cuando se cruzan umbrales de riesgo."""
 import logging
-import json
-from typing import Dict
-from app.models import RiskIndex
+import requests
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
 
 class AlertService:
-    """Gestiona el despacho de alertas cuando CRI > 65 (CRITICAL)."""
-
-    def send_alert(self, risk_index: RiskIndex, component_details: Dict):
-        """Despacha alertas a los consumidores configurados."""
-        cri_float = float(risk_index.cri_score)
-
-        # Identificar KPIs detonantes (los que más contribuyen)
-        detonantes = sorted(
-            component_details.items(),
-            key=lambda x: x[1]["normalized_score"] * x[1]["weight"],
-            reverse=True,
-        )[:2]
-
-        payload = {
-            "alert_type": "CRI_CRITICAL",
-            "timestamp": risk_index.timestamp.isoformat() if risk_index.timestamp else None,
-            "cri_score": cri_float,
-            "risk_zone": risk_index.risk_zone,
-            "threshold": settings.ALERT_THRESHOLD,
-            "detonating_kpis": [
-                {
-                    "kpi": k,
-                    "raw_value": v["raw_value"],
-                    "normalized_score": v["normalized_score"],
-                    "weight": v["weight"],
-                }
-                for k, v in detonantes
-            ],
-            "message": f"ALERTA: Índice CRI en zona CRÍTICA ({cri_float}). KPIs detonantes: {[k for k,_ in detonantes]}",
-        }
-
-        # Log de alerta
-        logger.critical(json.dumps(payload, ensure_ascii=False))
-
-        # Webhook si está configurado
-        if settings.ALERT_WEBHOOK_URL:
-            self._send_webhook(payload)
-
-        # Simulación de email
-        self._send_email_simulation(payload)
-
-    def _send_webhook(self, payload: Dict):
-        """Envía payload a webhook externo."""
-        import requests
+    """Gestiona alertas basadas en umbrales de CRI/TMI."""
+    
+    def __init__(self):
+        self.settings = get_settings()
+        self.webhook_url = self.settings.ALERT_WEBHOOK_URL
+        self.threshold = self.settings.ALERT_THRESHOLD
+        self._last_alert_cri = None
+        self._last_alert_divergence = None
+    
+    def check_and_alert(self, cri_score: float, tmi_score: float = None):
+        """
+        Verifica condiciones de alerta y envia notificaciones.
+        Evita spam: solo alerta cuando cruza el umbral por primera vez.
+        """
+        alerts = []
+        
+        # Alerta 1: CRI crítico
+        if cri_score > self.threshold:
+            if self._last_alert_cri is None or cri_score > self._last_alert_cri + 5:
+                msg = f"🚨 CRITICAL RISK: CRI at {cri_score:.2f} (threshold: {self.threshold})"
+                alerts.append({"type": "critical", "message": msg})
+                self._send_webhook(msg)
+                self._last_alert_cri = cri_score
+                logger.warning(f"[ALERT] {msg}")
+        else:
+            self._last_alert_cri = None
+        
+        # Alerta 2: Divergencia CRI vs TMI
+        if tmi_score is not None and abs(cri_score - tmi_score) > 40:
+            if self._last_alert_divergence is None:
+                msg = f"⚠️ DIVERGENCE: CRI={cri_score:.2f} vs TMI={tmi_score:.2f} (diff={abs(cri_score-tmi_score):.1f})"
+                alerts.append({"type": "warning", "message": msg})
+                self._send_webhook(msg)
+                self._last_alert_divergence = True
+                logger.warning(f"[ALERT] {msg}")
+        else:
+            self._last_alert_divergence = None
+        
+        return alerts
+    
+    def _send_webhook(self, message: str):
+        """Envia mensaje a webhook configurado."""
+        if not self.webhook_url:
+            logger.info(f"[ALERT-DRYRUN] {message}")
+            return
+        
         try:
-            response = requests.post(
-                settings.ALERT_WEBHOOK_URL,
-                json=payload,
-                timeout=10,
-            )
-            logger.info(f"Webhook response: {response.status_code}")
+            payload = {
+                "text": message,
+                "username": "CRI-Metrics-Bot",
+                "icon_emoji": ":warning:",
+            }
+            requests.post(self.webhook_url, json=payload, timeout=10)
+            logger.info(f"[ALERT-WEBHOOK] Sent: {message}")
         except Exception as e:
-            logger.error(f"Fallo envío webhook: {e}")
+            logger.error(f"[ALERT-WEBHOOK] Failed: {e}")
 
-    def _send_email_simulation(self, payload: Dict):
-        """Simula envío de email de alerta."""
-        logger.info(f"[EMAIL SIMULATION] To: risk-team@company.com | Subject: CRI CRITICAL {payload['cri_score']}")
+# Singleton
+_alert_service = AlertService()
+
+def get_alert_service() -> AlertService:
+    return _alert_service

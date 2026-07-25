@@ -10,12 +10,15 @@ services:
       - DATABASE_URL=sqlite:///./cri_metrics.db
       - ALERT_THRESHOLD=65.0
       - DATA_FRESHNESS_HOURS=24
+      - NEWSAPI_KEY=${NEWSAPI_KEY:-}
+      - ALPHAVANTAGE_KEY=${ALPHAVANTAGE_KEY:-}
       - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL:-}
     volumes:
       - cri-data:/app/data
+      - ./.env:/app/.env:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/api/v1/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -37,4 +40,3 @@ services:
 
 volumes:
   cri-data:
-  # postgres-data:

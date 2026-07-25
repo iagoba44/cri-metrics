@@ -549,15 +549,35 @@
 </div>
 <span class="col-span-2 font-metric-sm text-metric-sm text-right text-on-surface">12.4 EH/s</span>
 </div>
-<div class="grid grid-cols-12 items-center gap-4 tmi-bar-row py-1 px-2 rounded-lg">
+                <div class="grid grid-cols-12 items-center gap-4 tmi-bar-row py-1 px-2 rounded-lg">
 <span class="col-span-3 font-body-md text-body-md text-on-surface-variant">AI Token Performance</span>
 <div class="col-span-7 h-4 bg-surface-container-high rounded border border-outline-variant overflow-hidden tmi-bar-container" data-metric="+12.4% avg" data-pct="55">
 <div class="h-full bg-primary tmi-bar-fill" style="width: 55%;"></div>
 </div>
 <span class="col-span-2 font-metric-sm text-metric-sm text-right text-on-surface">+12.4% avg</span>
 </div>
+<div class="grid grid-cols-12 items-center gap-4 tmi-bar-row py-1 px-2 rounded-lg">
+<span class="col-span-3 font-body-md text-body-md text-on-surface-variant">AI Revenue (NVDA)</span>
+<div class="col-span-7 h-4 bg-surface-container-high rounded border border-outline-variant overflow-hidden tmi-bar-container" data-metric="Revenue growth" data-pct="70">
+<div class="h-full bg-success-glow tmi-bar-fill" style="width: 70%;"></div>
+</div>
+<span class="col-span-2 font-metric-sm text-metric-sm text-right text-on-surface">--</span>
 </div>
 </div>
+</div>
+
+        <!-- Historical Charts -->
+        <div class="glass-panel p-6 rounded-xl">
+            <h3 class="font-headline-sm text-headline-sm text-on-surface mb-6">Historical Trends (24h)</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-gutter">
+                <div class="bg-surface-container-low p-4 rounded-lg border border-outline-variant">
+                    <canvas id="criHistoryChart" height="200"></canvas>
+                </div>
+                <div class="bg-surface-container-low p-4 rounded-lg border border-outline-variant">
+                    <canvas id="tmiHistoryChart" height="200"></canvas>
+                </div>
+            </div>
+        </div>
 <!-- Footer Log -->
 <div class="glass-panel rounded-xl overflow-hidden flex flex-col h-[200px] border-t-2 border-primary">
 <div class="bg-surface-container-high px-4 py-2 flex justify-between items-center border-b border-outline-variant">
@@ -734,7 +754,9 @@
                 'arxiv_velocity': 'arXiv Velocity',
                 'hn_activity': 'Hacker News Activity',
                 'hashrate': 'Global Hashrate (AI)',
-                'ai_tokens': 'AI Token Performance'
+                'ai_tokens': 'AI Token Performance',
+                'news_coverage': 'News Coverage',
+                'ai_revenue': 'AI Revenue (NVDA)'
             };
             const rows = document.querySelectorAll('.tmi-bar-row');
             let idx = 0;
@@ -846,6 +868,9 @@
         if (tmi && tmi.data && cri && cri.data && Math.abs(tmi.data.tmi_score - cri.data.cri_score) > 40) {
             showAlert('DIVERGENCE', `TMI (${tmi.data.tmi_score}) and CRI (${cri.data.cri_score}) diverging >40pts`, 'warning');
         }
+
+        // Update history charts
+        updateHistoryCharts();
 
         logToTerminal('SYSTEM: Dashboard synchronized with live market data', 'system');
     }
@@ -1041,10 +1066,91 @@
         }
     }
 
+    // --- Historical Charts ---
+    let criHistoryChart, tmiHistoryChart;
+    async function initHistoryCharts() {
+        const history = await apiCall('GET', '/history');
+        if (!history || !history.cri) return;
+        
+        const criData = history.cri.map(r => r.score);
+        const criLabels = history.cri.map(r => new Date(r.timestamp).toLocaleTimeString('es-ES', {hour:'2-digit', minute:'2-digit'}));
+        const tmiData = history.tmi ? history.tmi.map(r => r.score) : [];
+        const tmiLabels = history.tmi ? history.tmi.map(r => new Date(r.timestamp).toLocaleTimeString('es-ES', {hour:'2-digit', minute:'2-digit'})) : [];
+        
+        const commonOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { ticks: { color: '#8b919d', font: {size:10}, maxTicksLimit: 6 }, grid: { color: 'rgba(48,54,61,0.3)' } },
+                y: { ticks: { color: '#8b919d', font: {size:10} }, grid: { color: 'rgba(48,54,61,0.3)' }, min: 0, max: 100 }
+            },
+            elements: { point: { radius: 3, hoverRadius: 6 }, line: { tension: 0.4 } }
+        };
+        
+        if (document.getElementById('criHistoryChart')) {
+            criHistoryChart = new Chart(document.getElementById('criHistoryChart').getContext('2d'), {
+                type: 'line',
+                data: {
+                    labels: criLabels,
+                    datasets: [{
+                        label: 'CRI',
+                        data: criData,
+                        borderColor: '#58a6ff',
+                        backgroundColor: 'rgba(88,166,255,0.1)',
+                        fill: true,
+                        borderWidth: 2
+                    }]
+                },
+                options: { ...commonOptions, plugins: { ...commonOptions.plugins, title: { display: true, text: 'CRI History (24h)', color: '#dae3ee', font: {size:12} } } }
+            });
+        }
+        
+        if (document.getElementById('tmiHistoryChart')) {
+            tmiHistoryChart = new Chart(document.getElementById('tmiHistoryChart').getContext('2d'), {
+                type: 'line',
+                data: {
+                    labels: tmiLabels.length ? tmiLabels : criLabels,
+                    datasets: [{
+                        label: 'TMI',
+                        data: tmiData.length ? tmiData : criData.map(() => null),
+                        borderColor: '#d29922',
+                        backgroundColor: 'rgba(210,153,34,0.1)',
+                        fill: true,
+                        borderWidth: 2
+                    }]
+                },
+                options: { ...commonOptions, plugins: { ...commonOptions.plugins, title: { display: true, text: 'TMI History (24h)', color: '#dae3ee', font: {size:12} } } }
+            });
+        }
+    }
+
+    async function updateHistoryCharts() {
+        const history = await apiCall('GET', '/history');
+        if (!history || !history.cri) return;
+        
+        const criData = history.cri.map(r => r.score);
+        const criLabels = history.cri.map(r => new Date(r.timestamp).toLocaleTimeString('es-ES', {hour:'2-digit', minute:'2-digit'}));
+        const tmiData = history.tmi ? history.tmi.map(r => r.score) : [];
+        const tmiLabels = history.tmi ? history.tmi.map(r => new Date(r.timestamp).toLocaleTimeString('es-ES', {hour:'2-digit', minute:'2-digit'})) : [];
+        
+        if (criHistoryChart) {
+            criHistoryChart.data.labels = criLabels;
+            criHistoryChart.data.datasets[0].data = criData;
+            criHistoryChart.update('none');
+        }
+        if (tmiHistoryChart) {
+            tmiHistoryChart.data.labels = tmiLabels.length ? tmiLabels : criLabels;
+            tmiHistoryChart.data.datasets[0].data = tmiData.length ? tmiData : criData.map(() => null);
+            tmiHistoryChart.update('none');
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         logToTerminal('SYSTEM: Boot sequence initiated...', 'system');
         initDonut();
         initTrendChart();
+        initHistoryCharts();
         loadScenarios();
         // Load real data after short delay
         setTimeout(loadRealData, 800);

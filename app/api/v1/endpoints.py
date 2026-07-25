@@ -14,6 +14,7 @@ from app.services.calculator import CRICalculator
 from app.services.ingestion import IngestionPipeline
 from app.models import RiskIndex, TelemetryRecord
 from app.scenarios import get_mode_state, SCENARIOS, get_scenario_list, get_zone
+from app.services.alerts import get_alert_service
 from datetime import datetime, timezone
 
 router = APIRouter(prefix="/api/v1")
@@ -79,6 +80,9 @@ def calculate_cri(db: Session = Depends(get_db)):
             calculator = CRICalculator(db)
             risk_index, metadata = calculator.calculate()
 
+            # Alertas
+            alerts = get_alert_service().check_and_alert(risk_index.cri_score)
+            
             return CalculateCRIResponse(
                 status="success",
                 data=RiskIndexSchema(
@@ -443,6 +447,14 @@ def calculate_tmi(db: Session = Depends(get_db)):
             )
             db.add(snapshot)
             db.commit()
+        
+        # Alertas: verificar divergencia con CRI más reciente
+        latest_cri = db.query(RiskIndex).order_by(RiskIndex.timestamp.desc()).first()
+        if latest_cri and result["tmi_score"] is not None:
+            get_alert_service().check_and_alert(
+                float(latest_cri.cri_score),
+                result["tmi_score"]
+            )
         
         return {
             "status": "success",

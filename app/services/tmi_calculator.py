@@ -13,12 +13,13 @@ logger = logging.getLogger(__name__)
 
 # Pesos de cada componente en el TMI
 TMI_WEIGHTS = {
-        "fear_greed": 0.25,      # Sentimiento del mercado crypto
-        "arxiv_velocity": 0.20,  # Velocidad de investigación ML
+        "fear_greed": 0.20,      # Sentimiento del mercado crypto
+        "arxiv_velocity": 0.15,  # Velocidad de investigación ML
         "hn_activity": 0.15,     # Interés técnico developer
         "hashrate": 0.15,        # Infraestructura activa (GPUs trabajando)
         "ai_tokens": 0.10,       # Inversión en tokens IA
-        "news_coverage": 0.15,   # Cobertura mediática IA
+        "news_coverage": 0.10,   # Cobertura mediática IA
+        "ai_revenue": 0.15,      # Ingresos empresas IA (AlphaVantage)
     }
 
 class TMICalculator:
@@ -168,5 +169,14 @@ class TMICalculator:
         except Exception as e:
             logger.error(f"[TMI] NewsAPI falló: {e}")
             components["news_coverage"] = None
+        
+        # 7. AI Revenue (AlphaVantage - opcional, requiere API key)
+        try:
+            from app.external.alphavantage import AlphaVantageClient
+            av = AlphaVantageClient()
+            components["ai_revenue"] = av.compute_tmi_component()
+        except Exception as e:
+            logger.error(f"[TMI] AlphaVantage revenue falló: {e}")
+            components["ai_revenue"] = None
         
         return components

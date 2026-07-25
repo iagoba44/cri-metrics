@@ -202,6 +202,21 @@ SCENARIOS = {
             "UOR": 60.0,    # Apagado selectivo
         }
     },
+    
+    "ai_utopia": {
+        "id": "ai_utopia",
+        "name": "AI Utopia",
+        "description": "El hype de la IA es real. Mercado sano, CRI bajo, demanda real y sostenible.",
+        "icon": "🌿",
+        "color": "#3fb950",
+        "params": {
+            "GSPI": 15.0,   # Precios estables por escala saludable
+            "SHPD": 15.0,   # Demanda real mantiene precios
+            "LTCR": 10.0,   # Contratos largos seguros y rentables
+            "CFBR": 10.0,   # Capital operativo saludable
+            "UOR": 10.0,    # Capacidad bien utilizada
+        }
+    },
 }
 
 def get_scenario_list() -> List[Dict]:

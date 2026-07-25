@@ -74,3 +74,35 @@ class AlphaVantageClient:
         except Exception as e:
             logger.error(f"[AlphaVantage] Parse error: {e}")
             return None
+    
+    def compute_tmi_component(self) -> Optional[float]:
+        """
+        Componente TMI: AI Infrastructure Revenue.
+        Usa crecimiento revenue NVDA como proxy de temperatura del sector IA.
+        
+        Revenue creciendo fuerte = mercado caliente (score alto)
+        Revenue estancado/cayendo = mercado frio (score bajo)
+        """
+        data = self.get_earnings("NVDA")
+        if not data or "quarterlyReports" not in data:
+            return None
+        
+        reports = data["quarterlyReports"]
+        if len(reports) < 2:
+            return None
+        
+        try:
+            latest = float(reports[0].get("totalRevenue", 0))
+            previous = float(reports[1].get("totalRevenue", 0))
+            if previous <= 0:
+                return None
+            
+            growth = ((latest - previous) / previous) * 100
+            
+            # Mapear growth a score 0-100
+            # -20% -> 0, 0% -> 50, +50% -> 100
+            score = 50.0 + (growth * 2.5)
+            return round(max(0.0, min(100.0, score)), 2)
+        except Exception as e:
+            logger.error(f"[AlphaVantage] TMI parse error: {e}")
+            return None
