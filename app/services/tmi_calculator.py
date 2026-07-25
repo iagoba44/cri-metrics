@@ -13,12 +13,13 @@ logger = logging.getLogger(__name__)
 
 # Pesos de cada componente en el TMI
 TMI_WEIGHTS = {
-    "fear_greed": 0.30,      # Sentimiento del mercado crypto
-    "arxiv_velocity": 0.25,  # Velocidad de investigación ML
-    "hn_activity": 0.20,     # Interés técnico developer
-    "hashrate": 0.15,        # Infraestructura activa (GPUs trabajando)
-    "ai_tokens": 0.10,       # Inversión en tokens IA
-}
+        "fear_greed": 0.25,      # Sentimiento del mercado crypto
+        "arxiv_velocity": 0.20,  # Velocidad de investigación ML
+        "hn_activity": 0.15,     # Interés técnico developer
+        "hashrate": 0.15,        # Infraestructura activa (GPUs trabajando)
+        "ai_tokens": 0.10,       # Inversión en tokens IA
+        "news_coverage": 0.15,   # Cobertura mediática IA
+    }
 
 class TMICalculator:
     """Calcula el Temperature Market Index."""
@@ -158,5 +159,14 @@ class TMICalculator:
         except Exception as e:
             logger.error(f"[TMI] CoinGecko AI falló: {e}")
             components["ai_tokens"] = None
+
+        # 6. News Coverage (opcional, requiere API key)
+        try:
+            from app.external.newsapi import NewsAPIClient
+            nw = NewsAPIClient()
+            components["news_coverage"] = nw.compute_tmi_component()
+        except Exception as e:
+            logger.error(f"[TMI] NewsAPI falló: {e}")
+            components["news_coverage"] = None
         
         return components

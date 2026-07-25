@@ -420,21 +420,29 @@ def get_source_weights():
     }
 
 @router.get("/calculate-tmi")
-def calculate_tmi():
+def calculate_tmi(db: Session = Depends(get_db)):
     """
     Calcula el Temperature Market Index (TMI).
-    Mide la temperatura del mercado IA usando 5 componentes:
-    - Fear & Greed Index (sentimiento crypto)
-    - arXiv velocity (papers ML/día)
-    - HN activity (stories IA/GPU en HackerNews)
-    - Hashrate global (GPUs trabajando)
-    - AI tokens performance (rendimiento tokens IA)
+    Guarda snapshot en DB para historial.
     """
     try:
         from app.services.tmi_calculator import TMICalculator
+        from app.models import TMISnapshot
+        from decimal import Decimal
+        
         components = TMICalculator.fetch_all_components()
         calc = TMICalculator()
         result = calc.calculate(components)
+        
+        # Guardar snapshot
+        if result["tmi_score"] is not None:
+            snapshot = TMISnapshot(
+                tmi_score=Decimal(str(result["tmi_score"])),
+                zone=result["zone"],
+                coverage_pct=Decimal(str(result["coverage_pct"])),
+            )
+            db.add(snapshot)
+            db.commit()
         
         return {
             "status": "success",
@@ -442,6 +450,45 @@ def calculate_tmi():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error calculando TMI: {str(e)}")
+
+@router.get("/history")
+def get_history(db: Session = Depends(get_db)):
+    """
+    Obtiene historial de CRI y TMI de las últimas 24h para sparklines.
+    """
+    try:
+        from datetime import timedelta
+        from app.models import RiskIndex, TMISnapshot
+        
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        
+        cri_history = (
+            db.query(RiskIndex)
+            .filter(RiskIndex.timestamp >= cutoff)
+            .order_by(RiskIndex.timestamp.asc())
+            .all()
+        )
+        
+        tmi_history = (
+            db.query(TMISnapshot)
+            .filter(TMISnapshot.timestamp >= cutoff)
+            .order_by(TMISnapshot.timestamp.asc())
+            .all()
+        )
+        
+        return {
+            "status": "success",
+            "cri": [
+                {"timestamp": r.timestamp.isoformat(), "score": float(r.cri_score), "zone": r.risk_zone}
+                for r in cri_history
+            ],
+            "tmi": [
+                {"timestamp": s.timestamp.isoformat(), "score": float(s.tmi_score), "zone": s.zone}
+                for s in tmi_history
+            ],
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 @router.get("/scenarios")
 def list_scenarios():

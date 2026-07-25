@@ -222,8 +222,10 @@
 <div class="flex items-center gap-4">
 <button class="material-symbols-outlined text-primary hover:bg-surface-container-highest p-2 rounded transition-colors" title="Refresh">refresh</button>
 <button class="material-symbols-outlined text-primary hover:bg-surface-container-highest p-2 rounded transition-colors" title="Upload">cloud_upload</button>
-<button class="bg-primary-container text-on-primary-container px-4 py-1.5 rounded-lg font-label-caps text-label-caps hover:scale-105 active:scale-95 transition-all">Data Ingestion</button>
-<div class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant flex items-center justify-center overflow-hidden">
+                <button class="bg-primary-container text-on-primary-container px-4 py-1.5 rounded-lg font-label-caps text-label-caps hover:scale-105 active:scale-95 transition-all" onclick="loadRealData()">Data Ingestion</button>
+                <button class="material-symbols-outlined text-primary hover:bg-surface-container-highest p-2 rounded transition-colors" onclick="exportData('json')" title="Export JSON (Ctrl+E)">download</button>
+                <button class="material-symbols-outlined text-primary hover:bg-surface-container-highest p-2 rounded transition-colors md:hidden" onclick="toggleSidebar()" title="Menu">menu</button>
+                <div class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant flex items-center justify-center overflow-hidden">
 <img class="w-full h-full object-cover" data-alt="A detailed digital portrait of a professional system administrator in a futuristic command center, wearing high-tech glasses with HUD reflections, cool blue and black techwear, illuminated by soft blue monitors in the background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBZsIch1XkgnuOGvl8dCoyy-IWrltTBSaixdCq81qH1hxDExrTc4lDZUoZYD_v6wqz6jwjbM4TIKL3zty2Rpi8Gb1xDLyv6ocdPFxYXV9SYe_mC3YAbMwmjfGfTYfUDkbDptPluv1Sy-m-nNN00T0RxfJ07735QuZZFTVixrHN0IJOMWKH_Wrmsu_9mPsNBPBM1mKEYp6Ca6Do2x1GZM1wMcUKmfTSvtY8xqFcJ3hzEhwD4wvSJHE-4d13jwUxE8VnuKoZ0hNq9CSU"/>
 </div>
 </div>
@@ -408,10 +410,22 @@
                     <p class="font-metric-lg text-metric-lg text-danger-alert mb-2" id="kpi-uor-val">--</p>
                     <div class="h-1 w-full bg-surface-container-high rounded-full overflow-hidden">
                         <div class="h-full bg-danger-alert" id="kpi-uor-bar" style="width: 0%;"></div>
-                    </div>
-</div>
-</div>
-<!-- Middle Section (Risk & Health) -->
+                </div>
+            </div>
+        </div>
+
+        <!-- SCENARIOS PANEL (visible en modo SIMULATION) -->
+        <div class="col-span-12 glass-panel p-6 rounded-xl" id="scenarios-panel" style="display:none;">
+            <div class="flex justify-between items-start mb-6">
+                <h3 class="font-headline-sm text-headline-sm text-on-surface">Scenario Simulation</h3>
+                <button class="bg-success-glow text-on-primary px-4 py-2 rounded-lg font-label-caps text-label-caps hover:scale-105 transition-all" onclick="setRealMode()">Back to Live</button>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4" id="scenario-grid">
+                <!-- Se llena via JS -->
+            </div>
+        </div>
+
+        <!-- Middle Section (Risk & Health) -->
 <div class="grid grid-cols-1 md:grid-cols-10 gap-gutter">
 <!-- Risk Composition Donut -->
 <div class="md:col-span-6 glass-panel p-6 rounded-xl flex flex-col">
@@ -798,36 +812,64 @@
             logToTerminal(`SUCCESS: ${active}/${total} data sources active`, 'success');
         }
 
-        // 5. Mode
+        // 5. Mode & Alerts
         const mode = await apiCall('GET', '/mode');
         if (mode) {
             const isSim = mode.is_simulation;
-            const badge = document.querySelector('.bg-success-glow\/10 span');
+            const badge = document.querySelector('.bg-success-glow\\/10 span');
             const dot = document.querySelector('.animate-pulse-live');
             if (isSim) {
-                document.querySelector('.bg-success-glow\/10').className = 'bg-danger-alert/10 border-b border-danger-alert/20 py-2 px-10 flex items-center gap-3';
+                document.querySelector('.bg-success-glow\\/10').className = 'bg-danger-alert/10 border-b border-danger-alert/20 py-2 px-10 flex items-center gap-3';
                 badge.innerText = '● SIMULATION: ' + (mode.scenario_name || mode.active_scenario);
                 badge.className = 'font-label-caps text-label-caps text-danger-alert tracking-widest';
                 dot.className = 'w-2 h-2 rounded-full bg-danger-alert animate-pulse-live';
                 document.getElementById('tmi-mode-text').innerText = 'SIMULATION';
                 document.getElementById('tmi-mode-text').className = 'font-label-caps text-[10px] text-danger-alert';
                 logToTerminal(`WARN: Simulation mode active - ${mode.scenario_name || mode.active_scenario}`, 'warn');
+                document.getElementById('scenarios-panel').style.display = 'block';
             } else {
+                document.querySelector('.bg-success-glow\\/10').className = 'bg-success-glow/10 border-b border-success-glow/20 py-2 px-10 flex items-center gap-3';
+                badge.innerText = '● LIVE MODE: 10+ Active APIs';
+                badge.className = 'font-label-caps text-label-caps text-success-glow tracking-widest';
+                dot.className = 'w-2 h-2 rounded-full bg-success-glow animate-pulse-live';
+                document.getElementById('tmi-mode-text').innerText = 'LIVE';
+                document.getElementById('tmi-mode-text').className = 'font-label-caps text-[10px] text-success-glow';
                 logToTerminal('SUCCESS: Live mode - 10+ APIs connected', 'success');
+                document.getElementById('scenarios-panel').style.display = 'none';
             }
+        }
+
+        // Alertas
+        if (cri && cri.data && cri.data.cri_score > 65) {
+            showAlert('CRITICAL RISK', `CRI at ${cri.data.cri_score} - Market entering danger zone`, 'critical');
+        }
+        if (tmi && tmi.data && cri && cri.data && Math.abs(tmi.data.tmi_score - cri.data.cri_score) > 40) {
+            showAlert('DIVERGENCE', `TMI (${tmi.data.tmi_score}) and CRI (${cri.data.cri_score}) diverging >40pts`, 'warning');
         }
 
         logToTerminal('SYSTEM: Dashboard synchronized with live market data', 'system');
     }
 
-    // --- 24h Trend Chart ---
+    // --- 24h Trend Chart (Real Data) ---
     let trendChart;
-    function initTrendChart(data=[45,48,52,50,55,55]) {
+    async function initTrendChart() {
+        const history = await apiCall('GET', '/history');
+        let data = [45, 48, 52, 50, 55, 55]; // fallback
+        let labels = Array.from({length: data.length}, (_, i) => i);
+        
+        if (history && history.cri && history.cri.length > 0) {
+            data = history.cri.map(r => r.score);
+            labels = history.cri.map((r, i) => i);
+            logToTerminal(`SUCCESS: Loaded ${history.cri.length} CRI snapshots for sparkline`, 'success');
+        } else {
+            logToTerminal('WARN: No historical data yet, using placeholder', 'warn');
+        }
+        
         const ctx = document.getElementById('trendChart').getContext('2d');
         trendChart = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: Array.from({length: data.length}, (_, i) => i),
+                labels: labels,
                 datasets: [{
                     label: 'CRI',
                     data: data,
@@ -878,10 +920,132 @@
         window.riskDonut = riskDonut;
     }
 
+    // --- Sidebar Toggle ---
+    function toggleSidebar() {
+        const sidebar = document.querySelector('aside');
+        sidebar.classList.toggle('hidden');
+    }
+
+    // --- Escenarios ---
+    let SCENARIOS = [];
+    async function loadScenarios() {
+        try {
+            const data = await apiCall('GET', '/scenarios');
+            if (!data || !data.scenarios) return;
+            SCENARIOS = data.scenarios;
+            const grid = document.getElementById('scenario-grid');
+            grid.innerHTML = '';
+            data.scenarios.forEach(s => {
+                const zoneColor = s.cri_preview <= 30 ? '#3fb950' : s.cri_preview <= 65 ? '#d29922' : '#f85149';
+                const zoneClass = s.cri_preview <= 30 ? 'zone-low' : s.cri_preview <= 65 ? 'zone-moderate' : 'zone-critical';
+                const div = document.createElement('div');
+                div.className = 'glass-panel p-4 rounded-lg cursor-pointer hover:border-primary transition-all active:scale-95';
+                div.style.borderLeft = `4px solid ${zoneColor}`;
+                div.onclick = () => selectScenario(s.id);
+                div.innerHTML = `
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="text-2xl">${s.icon || '⚡'}</span>
+                        <span class="font-label-caps text-[10px] text-on-surface-variant">${s.id}</span>
+                    </div>
+                    <div class="font-body-md text-body-md text-on-surface font-bold">${s.name}</div>
+                    <div class="font-metric-sm text-metric-sm mt-1" style="color:${zoneColor}">CRI: ${s.cri_preview}</div>
+                    <div class="font-label-caps text-[9px] text-on-surface-variant mt-1">${s.description.substring(0, 40)}...</div>
+                `;
+                grid.appendChild(div);
+            });
+        } catch (e) {
+            logToTerminal('ERROR: Failed to load scenarios', 'error');
+        }
+    }
+
+    async function selectScenario(id) {
+        logToTerminal(`INFO: Activating scenario: ${id}...`);
+        const result = await apiCall('POST', '/simulate-scenario', { scenario_id: id });
+        if (result && result.data) {
+            const cri = result.data.cri_score;
+            const zone = result.data.risk_zone;
+            logToTerminal(`SUCCESS: Scenario ${id} -> CRI=${cri} (${zone})`, 'success');
+            animateGauge(cri, 1500);
+            // Update KPIs
+            const comps = result.data.component_scores || {};
+            for (const [kpi, info] of Object.entries(comps)) {
+                const valEl = document.getElementById('kpi-' + kpi.toLowerCase() + '-val');
+                const barEl = document.getElementById('kpi-' + kpi.toLowerCase() + '-bar');
+                if (valEl) valEl.innerText = info.normalized_score.toFixed(1);
+                if (barEl) barEl.style.width = info.normalized_score + '%';
+            }
+            // Show scenario panel
+            document.getElementById('scenarios-panel').style.display = 'block';
+        }
+    }
+
+    async function setRealMode() {
+        logToTerminal('INFO: Switching to LIVE mode...');
+        await apiCall('POST', '/mode', { mode: 'REAL' });
+        document.getElementById('scenarios-panel').style.display = 'none';
+        loadRealData();
+    }
+
+    // --- Alertas ---
+    function showAlert(title, message, type='warning') {
+        const alert = document.createElement('div');
+        const color = type === 'critical' ? '#f85149' : type === 'warning' ? '#d29922' : '#3fb950';
+        alert.className = 'fixed top-20 right-10 z-50 p-4 rounded-lg border shadow-lg';
+        alert.style.cssText = `background: rgba(22,27,34,0.95); border-color: ${color}; box-shadow: 0 0 20px ${color}40;`;
+        alert.innerHTML = `
+            <div class="flex items-center gap-3">
+                <span class="material-symbols-outlined" style="color:${color}">${type === 'critical' ? 'warning' : 'info'}</span>
+                <div>
+                    <div class="font-label-caps text-[10px] font-bold" style="color:${color}">${title}</div>
+                    <div class="font-body-md text-body-md text-on-surface mt-1">${message}</div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(alert);
+        setTimeout(() => { alert.style.opacity = '0'; alert.style.transition = 'opacity 0.5s'; setTimeout(() => alert.remove(), 500); }, 6000);
+    }
+
+    // --- Export ---
+    async function exportData(format='json') {
+        logToTerminal(`INFO: Exporting data as ${format.toUpperCase()}...`);
+        const cri = await apiCall('POST', '/calculate-cri');
+        const tmi = await apiCall('GET', '/calculate-tmi');
+        const sources = await apiCall('GET', '/sources');
+        const data = {
+            timestamp: new Date().toISOString(),
+            cri: cri ? cri.data : null,
+            tmi: tmi ? tmi.data : null,
+            sources: sources ? sources.sources : null,
+        };
+        if (format === 'json') {
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `cri-metrics-${Date.now()}.json`; a.click();
+            URL.revokeObjectURL(url);
+            logToTerminal('SUCCESS: JSON export complete', 'success');
+        } else {
+            // CSV
+            let csv = 'timestamp,kpi,raw_value,source\n';
+            if (sources && sources.sources) {
+                sources.sources.forEach(s => {
+                    csv += `${new Date().toISOString()},${s.kpi},${s.raw_value},${s.data_source}\n`;
+                });
+            }
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `cri-metrics-${Date.now()}.csv`; a.click();
+            URL.revokeObjectURL(url);
+            logToTerminal('SUCCESS: CSV export complete', 'success');
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         logToTerminal('SYSTEM: Boot sequence initiated...', 'system');
-        initTrendChart();
         initDonut();
+        initTrendChart();
+        loadScenarios();
         // Load real data after short delay
         setTimeout(loadRealData, 800);
         // Auto-refresh every 30s
@@ -902,6 +1066,12 @@
                 globalTooltip.style.top = (e.clientY - 30) + 'px';
             });
             c.addEventListener('mouseleave', () => { globalTooltip.style.opacity = '0'; });
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'r' && e.ctrlKey) { e.preventDefault(); loadRealData(); }
+            if (e.key === 'e' && e.ctrlKey) { e.preventDefault(); exportData('json'); }
         });
     });
 </script>

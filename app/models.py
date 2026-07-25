@@ -24,3 +24,13 @@ class RiskIndex(Base):
     risk_zone = Column(String(20), nullable=False)  # LOW, MODERATE, CRITICAL
     alerts_triggered = Column(String(5), nullable=False, default="false")
     component_scores = Column(String(500), nullable=True)  # JSON string
+
+class TMISnapshot(Base):
+    """Snapshots periódicos del TMI para gráficos históricos."""
+    __tablename__ = "tmi_snapshots"
+
+    snapshot_id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    timestamp = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+    tmi_score = Column(Numeric(5, 2), nullable=False)
+    zone = Column(String(20), nullable=False)  # COLD, WARM, HOT
+    coverage_pct = Column(Numeric(5, 1), nullable=False)
