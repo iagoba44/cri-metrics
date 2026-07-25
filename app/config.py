@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     # Webhook para alertas (opcional)
     ALERT_WEBHOOK_URL: str = ""
     
+    # API Keys para fuentes opcionales
+    NEWSAPI_KEY: str = ""
+    ALPHAVANTAGE_KEY: str = ""
+    
     model_config = SettingsConfigDict(env_file=".env")
 
 @lru_cache()

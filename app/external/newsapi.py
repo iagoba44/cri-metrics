@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from typing import Optional
 import requests
 import logging
-import os
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +16,8 @@ class NewsAPIClient:
     BASE_URL = "https://newsapi.org/v2"
 
     def __init__(self):
-        self.api_key = os.getenv("NEWSAPI_KEY", "")
+        from app.config import get_settings
+        self.api_key = get_settings().NEWSAPI_KEY
 
     def get_news_count(self, query: str = "NVIDIA GPU data center", hours: int = 24) -> Optional[int]:
         """Cuenta noticias recientes sobre el tema."""

@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from typing import Optional
 import requests
 import logging
-import os
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +16,8 @@ class AlphaVantageClient:
     BASE_URL = "https://www.alphavantage.co/query"
 
     def __init__(self):
-        self.api_key = os.getenv("ALPHAVANTAGE_KEY", "")
+        from app.config import get_settings
+        self.api_key = get_settings().ALPHAVANTAGE_KEY
 
     def get_earnings(self, symbol: str = "NVDA") -> Optional[dict]:
         """Obtiene último earnings report."""
