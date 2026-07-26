@@ -53,7 +53,7 @@ class GeminiClient(LLMClient):
     """Cliente para Gemini 1.5 Flash (gratuito)."""
 
     def __init__(self):
-        super().__init__("Gemini 1.5 Flash")
+        super().__init__("Gemini 2.5 Flash")
         self.api_key = get_settings().GEMINI_API_KEY
 
     async def evaluate(self, prompt: str) -> Optional[Dict]:
@@ -63,7 +63,7 @@ class GeminiClient(LLMClient):
         try:
             import google.generativeai as genai
             genai.configure(api_key=self.api_key)
-            model = genai.GenerativeModel("models/gemini-1.5-flash")
+            model = genai.GenerativeModel("models/gemini-2.5-flash")
             response = await asyncio.wait_for(
                 asyncio.to_thread(model.generate_content, prompt),
                 timeout=self.timeout,
@@ -74,7 +74,7 @@ class GeminiClient(LLMClient):
             logger.warning("[Consensus] Gemini timeout")
             return None
         except Exception as e:
-            logger.warning(f"[Consensus] Gemini error: {e}")
+            logger.warning(f"[Consensus] Gemini error: {e}", exc_info=True)
             return None
 
     def _parse_response(self, text: str) -> Optional[Dict]:
