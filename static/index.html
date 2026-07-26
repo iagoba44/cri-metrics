@@ -223,6 +223,7 @@
 <button class="material-symbols-outlined text-primary hover:bg-surface-container-highest p-2 rounded transition-colors" title="Refresh">refresh</button>
 <button class="material-symbols-outlined text-primary hover:bg-surface-container-highest p-2 rounded transition-colors" title="Upload">cloud_upload</button>
                 <button class="bg-primary-container text-on-primary-container px-4 py-1.5 rounded-lg font-label-caps text-label-caps hover:scale-105 active:scale-95 transition-all" onclick="loadRealData()">Data Ingestion</button>
+                <button class="bg-[#1a73e8] text-white px-4 py-1.5 rounded-lg font-label-caps text-label-caps hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5" onclick="runGeminiAnalysis()">🤖 Gemini AI</button>
                 <button class="material-symbols-outlined text-primary hover:bg-surface-container-highest p-2 rounded transition-colors" onclick="exportData('json')" title="Export JSON (Ctrl+E)">download</button>
                 <button class="material-symbols-outlined text-primary hover:bg-surface-container-highest p-2 rounded transition-colors md:hidden" onclick="toggleSidebar()" title="Menu">menu</button>
                 <div class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant flex items-center justify-center overflow-hidden">
@@ -686,6 +687,29 @@
 </div>
 </footer>
 <div class="custom-tooltip" id="global-tooltip"></div>
+
+<!-- Gemini Analysis Modal -->
+<div id="gemini-modal" class="fixed inset-0 z-[100] hidden flex items-center justify-center bg-black/70 backdrop-blur-sm transition-all duration-300" onclick="if(event.target===this)closeGeminiModal()">
+    <div class="bg-surface-container-lowest border border-outline-variant rounded-xl max-w-2xl w-[90%] max-h-[80vh] overflow-y-auto terminal-scroll shadow-2xl">
+        <div class="flex justify-between items-center px-6 py-4 border-b border-outline-variant bg-surface-container-high rounded-t-xl">
+            <div class="flex items-center gap-3">
+                <span class="text-2xl">🤖</span>
+                <div>
+                    <h3 class="font-headline-sm text-headline-sm text-on-surface">Gemini Market Intel</h3>
+                    <p class="font-label-caps text-[10px] text-on-surface-variant">Análisis ejecutivo por Gemini 2.5 Flash</p>
+                </div>
+            </div>
+            <button class="material-symbols-outlined text-on-surface-variant hover:text-on-surface hover:bg-surface-container-higher p-1 rounded transition-all" onclick="closeGeminiModal()">close</button>
+        </div>
+        <div class="p-6 space-y-5 text-sm" id="gemini-content">
+            <div class="flex items-center justify-center py-12">
+                <div class="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                <span class="font-body-md text-body-md text-on-surface-variant ml-4">Consultando a Gemini 2.5 Flash con datos del mercado...</span>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
     // ============================================================
     // INTEGRACION CON APIs REALES - CRI Metrics v2.4
@@ -1328,7 +1352,68 @@
         document.addEventListener('keydown', (e) => {
             if (e.key === 'r' && e.ctrlKey) { e.preventDefault(); loadRealData(); }
             if (e.key === 'e' && e.ctrlKey) { e.preventDefault(); exportData('json'); }
+            if (e.key === 'g' && e.ctrlKey) { e.preventDefault(); runGeminiAnalysis(); }
         });
     });
+
+    // --- Gemini Market Analysis ---
+    async function runGeminiAnalysis() {
+        const modal = document.getElementById('gemini-modal');
+        const content = document.getElementById('gemini-content');
+        modal.classList.remove('hidden');
+        content.innerHTML = `<div class="flex items-center justify-center py-12">
+            <div class="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+            <span class="font-body-md text-body-md text-on-surface-variant ml-4">Consultando a Gemini 2.5 Flash...</span>
+        </div>`;
+        logToTerminal('SYSTEM: Consultando Gemini 2.5 Flash para análisis de mercado...', 'system');
+
+        const result = await apiCall('GET', '/gemini-analysis');
+        if (!result || !result.data) {
+            content.innerHTML = `<div class="text-danger-alert font-body-md">Error: Sin respuesta de Gemini.</div>`;
+            return;
+        }
+
+        const d = result.data;
+        if (d.status === 'error') {
+            content.innerHTML = `<div class="text-danger-alert font-body-md">${d.error || 'Error desconocido'}</div>`;
+            return;
+        }
+
+        const drivers = d.key_drivers && d.key_drivers.length ? d.key_drivers.map(x => '<li class="text-on-surface">'+x+'</li>').join('') : '<li class="text-on-surface-variant">No identificados</li>';
+        const recs = d.recommendations && d.recommendations.length ? d.recommendations.map(x => '<li class="text-on-surface">'+x+'</li>').join('') : '<li class="text-on-surface-variant">No disponibles</li>';
+
+        content.innerHTML = `
+            <div>
+                <span class="font-label-caps text-[10px] text-primary">RESUMEN EJECUTIVO</span>
+                <p class="font-body-lg text-body-lg text-on-surface mt-1 leading-relaxed">${d.market_summary || 'No disponible'}</p>
+            </div>
+            <div class="bg-surface-container-low p-4 rounded-lg border border-outline-variant">
+                <span class="font-label-caps text-[10px] text-warning-amber">EVALUACIÓN DE RIESGO</span>
+                <p class="font-body-md text-body-md text-on-surface mt-1">${d.risk_assessment || 'No disponible'}</p>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-surface-container-low p-4 rounded-lg border border-outline-variant">
+                    <span class="font-label-caps text-[10px] text-danger-alert">KEY DRIVERS</span>
+                    <ul class="mt-2 space-y-1.5 list-disc list-inside font-body-md text-body-md">${drivers}</ul>
+                </div>
+                <div class="bg-surface-container-low p-4 rounded-lg border border-outline-variant">
+                    <span class="font-label-caps text-[10px] text-success-glow">RECOMENDACIONES</span>
+                    <ul class="mt-2 space-y-1.5 list-disc list-inside font-body-md text-body-md">${recs}</ul>
+                </div>
+            </div>
+            <div class="bg-surface-container-low p-4 rounded-lg border border-outline-variant">
+                <span class="font-label-caps text-[10px] text-primary">OUTLOOK</span>
+                <p class="font-body-md text-body-md text-on-surface mt-1">${d.outlook || 'No disponible'}</p>
+            </div>
+            <div class="text-right font-metric-sm text-[10px] text-on-surface-variant border-t border-outline-variant pt-3 mt-2">
+                Generado por Gemini 2.5 Flash · ${new Date().toLocaleString()}
+            </div>
+        `;
+        logToTerminal('SUCCESS: Análisis Gemini recibido con recomendaciones', 'success');
+    }
+
+    function closeGeminiModal() {
+        document.getElementById('gemini-modal').classList.add('hidden');
+    }
 </script>
 </body></html>
