@@ -1,0 +1,23 @@
+# Cloud Run service para CRI Metrics
+runtime: custom
+service: cri-metrics
+env: standard
+
+automatic_scaling:
+  min_instances: 0
+  max_instances: 3
+  target_cpu_utilization: 0.65
+
+resources:
+  cpu: 2
+  memory_gb: 2
+  disk_size_gb: 10
+
+env_variables:
+  DATABASE_URL: "sqlite:///./data/cri_metrics.db"
+  APP_NAME: "CRI Metrics v3"
+
+# Variables secretas (configurar en Cloud Console)
+# NEWSAPI_KEY
+# ALPHAVANTAGE_KEY
+# GEMINI_API_KEY

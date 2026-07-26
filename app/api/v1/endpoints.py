@@ -15,6 +15,7 @@ from app.services.ingestion import IngestionPipeline
 from app.models import RiskIndex, TelemetryRecord
 from app.scenarios import get_mode_state, SCENARIOS, get_scenario_list, get_zone
 from app.services.alerts import get_alert_service
+from app.models import RiskIndex, TMISnapshot
 from datetime import datetime, timedelta, timezone
 
 router = APIRouter(prefix="/api/v1")
@@ -502,6 +503,80 @@ def get_history(db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
+
+@router.post("/backfill")
+def run_backfill(db: Session = Depends(get_db)):
+    """
+    Ejecuta ingesta historica de 6 meses (180 dias) desde multiples fuentes.
+    Llena la DB con datos para el baseline de proyecciones.
+    
+    Fuentes: Yahoo Finance, CoinGecko, arXiv, HN Algolia, WhatToMine.
+    Duracion estimada: 2-5 minutos.
+    """
+    try:
+        from app.services.backfill import HistoricalBackfill
+        pipeline = HistoricalBackfill(db)
+        results = pipeline.run_full()
+        return {"status": "success", "data": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en backfill: {str(e)}")
+
+
+@router.get("/predictive-status")
+def get_predictive_status(db: Session = Depends(get_db)):
+    """
+    Analisis predictivo completo:
+    - Early Warning System (Critical Slowing Down)
+    - TTD (Time To Danger) estimado en dias
+    - Proyecciones a 30, 60 y 90 dias
+    - Probabilidad de colapso
+    """
+    try:
+        from app.services.predictive_engine import get_predictive_engine
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=180)
+        rows = (
+            db.query(RiskIndex)
+            .filter(RiskIndex.timestamp >= cutoff)
+            .order_by(RiskIndex.timestamp.asc())
+            .all()
+        )
+        history = [float(r.cri_score) for r in rows]
+
+        engine = get_predictive_engine()
+        result = engine.analyze(history)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error predictivo: {str(e)}")
+
+
+@router.get("/projections")
+def get_projections(db: Session = Depends(get_db)):
+    """
+    Proyecciones detalladas de CRI a 30/60/90 dias
+    con intervalos de confianza y probabilidad de colapso.
+    """
+    try:
+        from app.services.predictive_engine import TrendProjector
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=180)
+        rows = (
+            db.query(RiskIndex)
+            .filter(RiskIndex.timestamp >= cutoff)
+            .order_by(RiskIndex.timestamp.asc())
+            .all()
+        )
+        history = [float(r.cri_score) for r in rows]
+
+        projector = TrendProjector()
+        proj = projector.project(history)
+        proj["history"] = [
+            {"timestamp": r.timestamp.isoformat(), "score": float(r.cri_score)}
+            for r in rows[-90:]
+        ]
+        return {"status": "success", "data": proj}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en proyecciones: {str(e)}")
 @router.get("/scenarios")
 def list_scenarios():
     """
@@ -644,7 +719,10 @@ async def get_consensus_diff(db: Session = Depends(get_db)):
 
 
 @router.get("/gemini-analysis")
-async def get_gemini_analysis(db: Session = Depends(get_db)):
+async def get_gemini_analysis(
+    custom_prompt: str = "",
+    db: Session = Depends(get_db),
+):
     """
     Genera un reporte ejecutivo del mercado con recomendaciones usando Gemini 2.5 Flash.
     Incluye: resumen, drivers, recomendaciones y outlook.
@@ -728,7 +806,7 @@ async def get_gemini_analysis(db: Session = Depends(get_db)):
         }
 
         analysis = get_gemini_analysis()
-        report = await analysis.generate(snapshot)
+        report = await analysis.generate(snapshot, custom_prompt)
         report["snapshot"] = snapshot
 
         return {"status": "success", "data": report}
@@ -791,3 +869,78 @@ def get_algorithmic_status(db: Session = Depends(get_db)):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.post("/backfill")
+def run_backfill(db: Session = Depends(get_db)):
+    """
+    Ejecuta ingesta historica de 6 meses (180 dias) desde multiples fuentes.
+    Llena la DB con datos para el baseline de proyecciones.
+    
+    Fuentes: Yahoo Finance, CoinGecko, arXiv, HN Algolia, WhatToMine.
+    Duracion estimada: 2-5 minutos.
+    """
+    try:
+        from app.services.backfill import HistoricalBackfill
+        pipeline = HistoricalBackfill(db)
+        results = pipeline.run_full()
+        return {"status": "success", "data": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en backfill: {str(e)}")
+
+
+@router.get("/predictive-status")
+def get_predictive_status(db: Session = Depends(get_db)):
+    """
+    Analisis predictivo completo:
+    - Early Warning System (Critical Slowing Down)
+    - TTD (Time To Danger) estimado en dias
+    - Proyecciones a 30, 60 y 90 dias
+    - Probabilidad de colapso
+    """
+    try:
+        from app.services.predictive_engine import get_predictive_engine
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=180)
+        rows = (
+            db.query(RiskIndex)
+            .filter(RiskIndex.timestamp >= cutoff)
+            .order_by(RiskIndex.timestamp.asc())
+            .all()
+        )
+        history = [float(r.cri_score) for r in rows]
+
+        engine = get_predictive_engine()
+        result = engine.analyze(history)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error predictivo: {str(e)}")
+
+
+@router.get("/projections")
+def get_projections(db: Session = Depends(get_db)):
+    """
+    Proyecciones detalladas de CRI a 30/60/90 dias
+    con intervalos de confianza y probabilidad de colapso.
+    """
+    try:
+        from app.services.predictive_engine import TrendProjector
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=180)
+        rows = (
+            db.query(RiskIndex)
+            .filter(RiskIndex.timestamp >= cutoff)
+            .order_by(RiskIndex.timestamp.asc())
+            .all()
+        )
+        history = [float(r.cri_score) for r in rows]
+
+        projector = TrendProjector()
+        proj = projector.project(history)
+        proj["history"] = [
+            {"timestamp": r.timestamp.isoformat(), "score": float(r.cri_score)}
+            for r in rows[-90:]
+        ]
+        return {"status": "success", "data": proj}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en proyecciones: {str(e)}")

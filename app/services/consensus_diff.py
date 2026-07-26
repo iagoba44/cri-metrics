@@ -164,11 +164,11 @@ class ConsensusDiff:
     """
 
     def __init__(self):
-        self.clients: List[LLMClient] = [
-            GeminiClient(),
-            GroqClient(),
-            FallbackClient(),
-        ]
+        self.clients: List[LLMClient] = [GeminiClient()]
+        # Solo agregar Groq si tiene API key configurada
+        if get_settings().GROQ_API_KEY:
+            self.clients.append(GroqClient())
+        self.clients.append(FallbackClient())
 
     def build_prompt(self, snapshot: Dict) -> str:
         """Construye el prompt con el snapshot actual del sistema."""

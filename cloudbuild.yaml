@@ -1,0 +1,43 @@
+# Cloud Build: Construye y despliega en Cloud Run
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/cri-metrics:latest'
+      - '-f'
+      - 'Dockerfile.cloudrun'
+      - '.'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/cri-metrics:latest'
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'cri-metrics'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/cri-metrics:latest'
+      - '--platform'
+      - 'managed'
+      - '--region'
+      - 'europe-west1'
+      - '--memory'
+      - '2Gi'
+      - '--cpu'
+      - '2'
+      - '--allow-unauthenticated'
+      - '--port'
+      - '8000'
+      - '--set-env-vars'
+      - 'DATABASE_URL=sqlite:///./data/cri_metrics.db,APP_NAME=CRI Metrics v3'
+      - '--set-secrets'
+      - 'NEWSAPI_KEY=newsapi-key:latest,ALPHAVANTAGE_KEY=alphavantage-key:latest,GEMINI_API_KEY=gemini-key:latest'
+
+images:
+  - 'gcr.io/$PROJECT_ID/cri-metrics:latest'
+
+timeout: 1800s

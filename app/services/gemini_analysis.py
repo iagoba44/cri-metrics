@@ -53,8 +53,13 @@ class GeminiAnalysis:
     def __init__(self):
         self.api_key = get_settings().GEMINI_API_KEY
 
-    async def generate(self, snapshot: Dict) -> Dict:
-        """Genera el reporte completo con recomendaciones."""
+    async def generate(self, snapshot: Dict, custom_prompt: str = "") -> Dict:
+        """Genera el reporte completo con recomendaciones.
+        
+        Args:
+            snapshot: Dict con todos los datos del sistema
+            custom_prompt: Instrucciones adicionales del usuario para Gemini
+        """
         if not self.api_key:
             return {
                 "status": "error",
@@ -62,7 +67,7 @@ class GeminiAnalysis:
                 "market_summary": "Configura GEMINI_API_KEY en el archivo .env para activar el análisis por IA.",
             }
 
-        prompt = RECOMMENDATION_PROMPT.format(
+        base = RECOMMENDATION_PROMPT.format(
             cri_score=snapshot.get("cri_score", "N/A"),
             cri_zone=snapshot.get("cri_zone", "UNKNOWN"),
             tmi_score=snapshot.get("tmi_score", "N/A"),
@@ -81,6 +86,11 @@ class GeminiAnalysis:
             ema=snapshot.get("ema", "N/A"),
             decay_weights=snapshot.get("decay_text", "N/A"),
         )
+
+        if custom_prompt:
+            base += f"\n\nINSTRUCCIONES ADICIONALES DEL USUARIO:\n{custom_prompt}\n\nIntegra estas instrucciones en tu análisis y recomendaciones."
+        
+        prompt = base
 
         try:
             import google.generativeai as genai

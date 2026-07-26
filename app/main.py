@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
 from app.api.v1 import router as api_v1_router
 from app.config import get_settings
@@ -60,8 +61,17 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="CRI Metrics System",
     description="Sistema de KPIs para la Medicion del Riesgo de Ajuste en IA",
-    version="2.5.0",
+    version="3.0.0",
     lifespan=lifespan,
+)
+
+# CORS para Cloud Run / publicacion
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(api_v1_router)

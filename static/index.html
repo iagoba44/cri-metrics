@@ -571,15 +571,15 @@
         <div class="glass-panel p-6 rounded-xl">
             <div class="flex justify-between items-start mb-6">
                 <div>
-                    <h3 class="font-headline-sm text-headline-sm text-on-surface">Consensus Diff (AI Committee)</h3>
-                    <p class="font-label-caps text-[10px] text-on-surface-variant mt-1">Cualitativo vs Algorítmico</p>
+                    <h3 class="font-headline-sm text-headline-sm text-on-surface">Consensus Diff (IA vs Algorítmico)</h3>
+                    <p class="font-label-caps text-[10px] text-on-surface-variant mt-1">Evaluación cualitativa del mercado por Gemini 2.5 Flash</p>
                 </div>
                 <div id="consensus-alert-badge"></div>
             </div>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div class="bg-surface-container-low p-3 rounded border border-outline-variant">
-                    <p class="font-label-caps text-[9px] text-on-surface-variant mb-1">AI RISK SCORE</p>
-                    <p class="font-metric-lg text-metric-lg text-on-surface" id="consensus-ai-score">--</p>
+                <div class="bg-surface-container-low p-3 rounded border border-primary/40">
+                    <p class="font-label-caps text-[9px] text-primary mb-1">🤖 GEMINI AI SCORE</p>
+                    <p class="font-metric-xl text-metric-xl text-primary glow-text-primary" id="consensus-ai-score">--</p>
                 </div>
                 <div class="bg-surface-container-low p-3 rounded border border-outline-variant">
                     <p class="font-label-caps text-[9px] text-on-surface-variant mb-1">ALGORITHMIC CRI</p>
@@ -590,11 +590,10 @@
                     <p class="font-metric-lg text-metric-lg" id="consensus-diff" style="color:var(--success-glow)">--</p>
                 </div>
                 <div class="bg-surface-container-low p-3 rounded border border-outline-variant">
-                    <p class="font-label-caps text-[9px] text-on-surface-variant mb-1">LLMs ACTIVE</p>
-                    <p class="font-metric-lg text-metric-lg text-on-surface" id="consensus-llm-count">--</p>
+                    <p class="font-label-caps text-[9px] text-on-surface-variant mb-1">RAZONAMIENTO</p>
+                    <div class="font-metric-sm text-[11px] text-on-surface-variant" id="consensus-reasoning-short">--</div>
                 </div>
             </div>
-            <div class="mt-4 text-on-surface-variant font-body-md text-[12px]" id="consensus-reasoning"></div>
         </div>
 
         <!-- Algorithmic Status Panel -->
@@ -633,6 +632,43 @@
                         <span class="text-on-surface-variant">Loading...</span>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <!-- Predictive Panel (TTD + Proyecciones) -->
+        <div class="glass-panel p-6 rounded-xl">
+            <h3 class="font-headline-sm text-headline-sm text-on-surface mb-6">Predictive Intelligence (Early Warning)</h3>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div class="bg-surface-container-low p-3 rounded border border-outline-variant">
+                    <p class="font-label-caps text-[9px] text-on-surface-variant mb-1">TTD (Time To Danger)</p>
+                    <p class="font-metric-xl text-metric-xl text-on-surface" id="pred-ttd">--</p>
+                    <p class="font-label-caps text-[9px] text-on-surface-variant mt-1">días hasta >65</p>
+                </div>
+                <div class="bg-surface-container-low p-3 rounded border border-outline-variant">
+                    <p class="font-label-caps text-[9px] text-on-surface-variant mb-1">EW SIGNAL</p>
+                    <p class="font-metric-lg text-metric-lg" id="pred-ew-signal">--</p>
+                </div>
+                <div class="bg-surface-container-low p-3 rounded border border-outline-variant">
+                    <p class="font-label-caps text-[9px] text-on-surface-variant mb-1">COLAPSO 30d</p>
+                    <p class="font-metric-lg text-metric-lg" id="pred-collapse-30">--%</p>
+                </div>
+                <div class="bg-surface-container-low p-3 rounded border border-outline-variant">
+                    <p class="font-label-caps text-[9px] text-on-surface-variant mb-1">PROY 30d CRI</p>
+                    <p class="font-metric-lg text-metric-lg text-on-surface" id="pred-proj-30">--</p>
+                </div>
+                <div class="bg-surface-container-low p-3 rounded border border-outline-variant">
+                    <p class="font-label-caps text-[9px] text-on-surface-variant mb-1">AUTOCORR lag-1</p>
+                    <p class="font-metric-lg text-metric-lg text-on-surface" id="pred-acf1">--</p>
+                </div>
+            </div>
+            <div class="mt-3 text-on-surface-variant font-body-md text-[12px]" id="pred-summary">--</div>
+        </div>
+
+        <!-- 6-Month Historical + Projection Chart -->
+        <div class="glass-panel p-6 rounded-xl">
+            <h3 class="font-headline-sm text-headline-sm text-on-surface mb-6">CRI 6-Month Trend + Projection</h3>
+            <div class="bg-surface-container-low p-4 rounded-lg border border-outline-variant" style="height:300px;">
+                <canvas id="projectionChart"></canvas>
             </div>
         </div>
 
@@ -690,21 +726,30 @@
 
 <!-- Gemini Analysis Modal -->
 <div id="gemini-modal" class="fixed inset-0 z-[100] hidden flex items-center justify-center bg-black/70 backdrop-blur-sm transition-all duration-300" onclick="if(event.target===this)closeGeminiModal()">
-    <div class="bg-surface-container-lowest border border-outline-variant rounded-xl max-w-2xl w-[90%] max-h-[80vh] overflow-y-auto terminal-scroll shadow-2xl">
+    <div class="bg-surface-container-lowest border border-outline-variant rounded-xl max-w-2xl w-[90%] max-h-[85vh] overflow-y-auto terminal-scroll shadow-2xl">
         <div class="flex justify-between items-center px-6 py-4 border-b border-outline-variant bg-surface-container-high rounded-t-xl">
             <div class="flex items-center gap-3">
                 <span class="text-2xl">🤖</span>
                 <div>
                     <h3 class="font-headline-sm text-headline-sm text-on-surface">Gemini Market Intel</h3>
-                    <p class="font-label-caps text-[10px] text-on-surface-variant">Análisis ejecutivo por Gemini 2.5 Flash</p>
+                    <p class="font-label-caps text-[10px] text-on-surface-variant">Análisis por Gemini 2.5 Flash con datos en vivo del sistema</p>
                 </div>
             </div>
             <button class="material-symbols-outlined text-on-surface-variant hover:text-on-surface hover:bg-surface-container-higher p-1 rounded transition-all" onclick="closeGeminiModal()">close</button>
         </div>
+        <!-- Custom Prompt Input -->
+        <div class="px-6 py-3 border-b border-outline-variant bg-surface-container-low">
+            <div class="flex gap-3 items-end">
+                <div class="flex-grow">
+                    <label class="font-label-caps text-[9px] text-primary mb-1 block">INSTRUCCIONES ADICIONALES (opcional)</label>
+                    <textarea id="gemini-custom-prompt" class="w-full bg-surface-container border border-outline-variant rounded p-2 font-metric-sm text-[12px] text-on-surface placeholder-on-surface-variant/40 resize-none" rows="2" placeholder="Ej: Enfócate en el impacto de NVIDIA, genera recomendaciones para inversores"></textarea>
+                </div>
+                <button class="bg-primary text-on-primary px-5 py-2 rounded-lg font-label-caps text-label-caps hover:scale-105 active:scale-95 transition-all whitespace-nowrap flex items-center gap-1.5" onclick="runGeminiAnalysis()">🤖 Analizar</button>
+            </div>
+        </div>
         <div class="p-6 space-y-5 text-sm" id="gemini-content">
-            <div class="flex items-center justify-center py-12">
-                <div class="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-                <span class="font-body-md text-body-md text-on-surface-variant ml-4">Consultando a Gemini 2.5 Flash con datos del mercado...</span>
+            <div class="flex items-center justify-center py-12 text-on-surface-variant font-body-md">
+                Escribe instrucciones opcionales arriba y presiona "Analizar" o haz click en 🤖 Gemini AI en el header.
             </div>
         </div>
     </div>
@@ -968,6 +1013,7 @@
         // Consensus Diff (non-blocking)
         updateConsensusDiff();
         updateAlgorithmicStatus();
+        updatePredictiveStatus();
 
         logToTerminal('SYSTEM: Dashboard synchronized with live market data', 'system');
     }
@@ -1243,14 +1289,126 @@
         }
     }
 
-    // --- Consensus Diff Panel ---
+    // --- Predictive Panel ---
+    let projectionChart;
+
+    async function updatePredictiveStatus() {
+        const result = await apiCall('GET', '/predictive-status');
+        if (!result || !result.data) return;
+
+        const d = result.data;
+        const ews = d.early_warning || {};
+        const proj = d.projections || {};
+
+        // TTD
+        const ttdEl = document.getElementById('pred-ttd');
+        const ttd = ews.days_to_collapse;
+        if (ttd !== null && ttd !== undefined) {
+            ttdEl.innerText = ttd;
+            if (ttd < 30) { ttdEl.className = 'font-metric-xl text-metric-xl text-danger-alert'; }
+            else if (ttd < 90) { ttdEl.className = 'font-metric-xl text-metric-xl text-warning-amber'; }
+            else { ttdEl.className = 'font-metric-xl text-metric-xl text-on-surface'; }
+        } else {
+            ttdEl.innerText = 'N/A';
+        }
+
+        // EW Signal
+        const signalEl = document.getElementById('pred-ew-signal');
+        signalEl.innerText = ews.ew_signal || '--';
+        if (ews.ew_signal === 'CRITICAL') signalEl.style.color = '#f85149';
+        else if (ews.ew_signal === 'PRE_ALERT') signalEl.style.color = '#d29922';
+        else signalEl.style.color = '#3fb950';
+
+        // Collapse prob 30d
+        document.getElementById('pred-collapse-30').innerText = proj.projections ? proj.projections['30'].collapse_probability_pct : '--';
+        document.getElementById('pred-proj-30').innerText = proj.projections ? proj.projections['30'].projected_cri : '--';
+        document.getElementById('pred-acf1').innerText = ews.autocorrelation || '--';
+        document.getElementById('pred-summary').innerText = d.summary || '--';
+
+        // Projection chart
+        updateProjectionChart();
+    }
+
+    async function updateProjectionChart() {
+        const proj = await apiCall('GET', '/projections');
+        if (!proj || !proj.data || !proj.data.history) return;
+
+        const d = proj.data;
+        const history = d.history.map(r => ({ x: new Date(r.timestamp), y: r.score }));
+
+        const ctx = document.getElementById('projectionChart');
+        if (!ctx) return;
+        if (projectionChart) projectionChart.destroy();
+
+        // Proyecciones
+        const lastTs = history[history.length - 1]?.x || new Date();
+        const futurePts = [];
+        if (d.projections) {
+            for (const [days, p] of Object.entries(d.projections)) {
+                const futTs = new Date(lastTs.getTime() + parseInt(days) * 86400000);
+                futurePts.push({ x: futTs, y: p.projected_cri, upper: p.band.upper, lower: p.band.lower });
+            }
+        }
+
+        projectionChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                datasets: [
+                    {
+                        label: 'CRI Historical',
+                        data: history,
+                        borderColor: '#58a6ff',
+                        borderWidth: 2,
+                        tension: 0.2,
+                        pointRadius: 0,
+                        segment: { borderColor: '#58a6ff' },
+                    },
+                    {
+                        label: 'CRI Projected',
+                        data: futurePts,
+                        borderColor: '#58a6ff',
+                        borderWidth: 2,
+                        borderDash: [6, 3],
+                        tension: 0.2,
+                        pointRadius: 4,
+                        pointBackgroundColor: '#f85149',
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: true, labels: { color: '#dae3ee', font: { size: 10 } } } },
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: { unit: 'month', displayFormats: { month: 'MMM' } },
+                        ticks: { color: '#8b919d', font: { size: 10 } },
+                        grid: { color: 'rgba(48,54,61,0.3)' },
+                    },
+                    y: {
+                        min: 0, max: 100,
+                        ticks: { color: '#8b919d', font: { size: 10 } },
+                        grid: { color: 'rgba(48,54,61,0.3)' },
+                    },
+                },
+            },
+        });
+    }
     async function updateConsensusDiff() {
         const result = await apiCall('GET', '/consensus-diff');
         if (!result || !result.data) return;
         const d = result.data;
-        document.getElementById('consensus-ai-score').innerText = d.ai_risk_score !== null ? d.ai_risk_score : 'N/A';
-        document.getElementById('consensus-cri-score').innerText = d.cri_algoritmico !== null ? d.cri_algoritmico : 'N/A';
-        document.getElementById('consensus-llm-count').innerText = d.committee_size + '/3';
+        document.getElementById('consensus-ai-score').innerText = d.ai_risk_score !== null ? d.ai_risk_score : '--';
+        document.getElementById('consensus-cri-score').innerText = d.cri_algoritmico !== null ? d.cri_algoritmico : '--';
+        
+        // Gemini reasoning (primer LLM con score)
+        let geminiReasoning = '--';
+        if (d.individual) {
+            const gemini = d.individual.find(r => r.score !== null && r.llm.includes('Gemini'));
+            if (gemini) geminiReasoning = gemini.reasoning || '--';
+        }
+        document.getElementById('consensus-reasoning-short').innerText = geminiReasoning.length > 80 ? geminiReasoning.substring(0, 80) + '...' : geminiReasoning;
         
         const diffEl = document.getElementById('consensus-diff');
         if (d.diff !== null) {
@@ -1258,25 +1416,12 @@
             if (d.diff_alert) {
                 diffEl.style.color = '#f85149';
                 diffEl.className = 'font-metric-lg text-metric-lg';
-                document.getElementById('consensus-alert-badge').innerHTML = '<span class="bg-danger-alert/20 border border-danger-alert rounded px-2 py-1 font-label-caps text-[10px] text-danger-alert">DIVERGENCIA DETECTADA</span>';
+                document.getElementById('consensus-alert-badge').innerHTML = '<span class="bg-danger-alert/20 border border-danger-alert rounded px-2 py-1 font-label-caps text-[10px] text-danger-alert">⚠ DIVERGENCIA</span>';
                 logToTerminal(`WARN: Consenso IA diverge del CRI algorítmico (Δ=${d.diff})`, 'warn');
             } else {
                 diffEl.style.color = '#3fb950';
                 document.getElementById('consensus-alert-badge').innerHTML = '';
             }
-        }
-        
-        // Reasoning
-        const reasoningDiv = document.getElementById('consensus-reasoning');
-        reasoningDiv.innerHTML = '';
-        if (d.individual) {
-            d.individual.forEach(r => {
-                const p = document.createElement('p');
-                const color = r.score !== null ? '#dae3ee' : '#8b919d';
-                p.innerHTML = `<span style="color:#58a6ff">[${r.llm}]</span> <span style="color:${color}">${r.score !== null ? r.score : 'N/A'}</span> — ${r.reasoning || ''}`;
-                p.className = 'mb-1';
-                reasoningDiv.appendChild(p);
-            });
         }
     }
 
@@ -1360,6 +1505,9 @@
     async function runGeminiAnalysis() {
         const modal = document.getElementById('gemini-modal');
         const content = document.getElementById('gemini-content');
+        const customInput = document.getElementById('gemini-custom-prompt');
+        const customPrompt = customInput ? customInput.value.trim() : '';
+        
         modal.classList.remove('hidden');
         content.innerHTML = `<div class="flex items-center justify-center py-12">
             <div class="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
@@ -1367,7 +1515,8 @@
         </div>`;
         logToTerminal('SYSTEM: Consultando Gemini 2.5 Flash para análisis de mercado...', 'system');
 
-        const result = await apiCall('GET', '/gemini-analysis');
+        const endpoint = '/gemini-analysis' + (customPrompt ? '?custom_prompt=' + encodeURIComponent(customPrompt) : '');
+        const result = await apiCall('GET', endpoint);
         if (!result || !result.data) {
             content.innerHTML = `<div class="text-danger-alert font-body-md">Error: Sin respuesta de Gemini.</div>`;
             return;
