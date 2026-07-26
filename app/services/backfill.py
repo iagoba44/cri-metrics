@@ -65,6 +65,15 @@ class HistoricalBackfill:
             logger.error(f"[Backfill] HN fallo: {e}")
             results["hn"] = {"error": str(e)}
 
+        # 5. Generar CRI historico (risk_indices)
+        try:
+            cri_count = self._generate_historical_cri()
+            results["cri_indices"] = cri_count
+            logger.info(f"[Backfill] CRI historico: {cri_count} indices generados")
+        except Exception as e:
+            logger.error(f"[Backfill] CRI historico fallo: {e}")
+            results["cri_indices"] = {"error": str(e)}
+
         # Calcular total
         total = sum(
             r if isinstance(r, int) else 0 for r in results.values()
@@ -266,4 +275,54 @@ class HistoricalBackfill:
 
             self.db.commit()
             current += timedelta(days=7)
+        return count
+
+    def _generate_historical_cri(self) -> int:
+        """Genera risk_indices historicos (uno por dia) a partir de telemetry_records."""
+        from app.models import TelemetryRecord, RiskIndex
+        from app.scenarios import get_zone
+        import json
+
+        KPIS = ["GSPI", "SHPD", "LTCR", "CFBR", "UOR"]
+        WEIGHTS = {"GSPI": 0.25, "SHPD": 0.15, "LTCR": 0.20, "CFBR": 0.20, "UOR": 0.20}
+        DEFAULT = 50.0
+
+        count = 0
+        current = self.start_date
+
+        while current <= self.end_date:
+            day_start = current.replace(hour=0, minute=0, second=0, microsecond=0)
+            day_end = day_start + timedelta(days=1)
+            current += timedelta(days=1)
+
+            kpi_values = {}
+            for kpi in KPIS:
+                latest = (
+                    self.db.query(TelemetryRecord)
+                    .filter(TelemetryRecord.kpi_code == kpi, TelemetryRecord.timestamp < day_end)
+                    .order_by(TelemetryRecord.timestamp.desc())
+                    .first()
+                )
+                val = float(latest.normalized_score) if latest and latest.normalized_score else DEFAULT
+                kpi_values[kpi] = min(100.0, max(0.0, val))
+
+            cri_score = sum(kpi_values[k] * WEIGHTS[k] for k in KPIS)
+            cri_score = round(min(100.0, max(0.0, cri_score)), 2)
+            zone = get_zone(cri_score)
+
+            record = RiskIndex(
+                index_id=uuid.uuid4(),
+                timestamp=day_start,
+                cri_score=Decimal(str(cri_score)),
+                risk_zone=zone,
+                alerts_triggered="false",
+                component_scores=json.dumps(kpi_values),
+            )
+            self.db.add(record)
+            count += 1
+
+            if count % 30 == 0:
+                self.db.commit()
+
+        self.db.commit()
         return count

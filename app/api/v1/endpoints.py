@@ -577,76 +577,48 @@ def get_projections(db: Session = Depends(get_db)):
         return {"status": "success", "data": proj}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en proyecciones: {str(e)}")
+
+
 @router.get("/scenarios")
 def list_scenarios():
-    """
-    Lista todos los escenarios predefinidos disponibles para simulacion.
-    """
+    """Lista todos los escenarios predefinidos disponibles para simulacion."""
     return {
         "status": "success",
         "count": len(SCENARIOS),
         "scenarios": get_scenario_list(),
     }
 
+
 @router.post("/simulate-scenario")
 def simulate_scenario(payload: dict, db: Session = Depends(get_db)):
-    """
-    Activa un escenario de simulacion y calcula el CRI resultante.
-    
-    Payload: {"scenario_id": "gpu_shortage"}
-    
-    Escenarios disponibles:
-    - normal: Mercado Normal
-    - gpu_shortage: Escasez GPU
-    - crypto_crash: Crash Crypto
-    - bear_market: Bear Market
-    - bull_run: Bull Run
-    - supply_crisis: Crisis de Suministro
-    - regulatory_shock: Shock Regulatorio
-    - infrastructure_boom: Boom Infraestructura
-    - ai_winter: Invierno IA
-    - energy_crisis: Crisis Energetica
-    """
+    """Activa un escenario de simulacion y calcula el CRI resultante."""
+    from app.scenarios import SCENARIOS, get_scenario_list
+
     scenario_id = payload.get("scenario_id")
     if not scenario_id:
         raise HTTPException(status_code=400, detail="scenario_id requerido")
-    
     if scenario_id not in SCENARIOS:
         raise HTTPException(status_code=400, detail=f"Escenario invalido: {scenario_id}")
-    
+
     mode_state = get_mode_state()
     mode_state.set_scenario(scenario_id)
-    
-    # Calcular CRI con escenario
     return calculate_cri(db)
 
 
 @router.get("/news-pipeline")
 def run_news_pipeline():
-    """
-    Ejecuta el pipeline completo de validación de noticias:
-    1. RSS feeds (Reuters, HN, TechCrunch)
-    2. Validación semántica (embeddings all-MiniLM-L6-v2)
-    3. Extracción de sentimiento estructurado (Capex, Demanda, Regulatorio)
-    """
+    """Ejecuta el pipeline completo de validación de noticias."""
     try:
         from app.external.rss_feeder import RSSFeeder
         from app.services.news_validator import NewsValidator
         from app.services.sentiment_extractor import SentimentExtractor
 
-        # 1. RSS
         feeder = RSSFeeder()
         raw_articles = feeder.fetch_all(max_per_feed=10)
-        
-        # 2. Validación semántica
         validator = NewsValidator()
         validated = validator.validate_batch(raw_articles)
-
-        # 3. Sentimiento estructurado
         extractor = SentimentExtractor()
         sentiment = extractor.extract(validated)
-
-        # 4. Score para TMI
         relevance = validator.compute_relevance_score(validated)
 
         return {
@@ -663,32 +635,22 @@ def run_news_pipeline():
 
 @router.get("/consensus-diff")
 async def get_consensus_diff(db: Session = Depends(get_db)):
-    """
-    Ejecuta el Comité de Riesgo (Consensus Diff).
-    Toma snapshot de CRI, TMI, noticias validadas y consulta LLMs.
-    Retorna el score promedio de los LLMs y el diferencial con CRI algorítmico.
-    """
+    """Ejecuta el Comite de Riesgo (Consensus Diff)."""
     try:
         from app.services.consensus_diff import get_consensus_diff
         from app.models import RiskIndex, TMISnapshot
 
-        # Obtener última data disponible
         latest_cri = db.query(RiskIndex).order_by(RiskIndex.timestamp.desc()).first()
         latest_tmi = db.query(TMISnapshot).order_by(TMISnapshot.timestamp.desc()).first()
 
-        # Calcular delta 24h
         cri_delta = 0.0
         if latest_cri:
-            historic = (
-                db.query(RiskIndex)
-                .filter(RiskIndex.timestamp >= (datetime.now(timezone.utc) - timedelta(hours=24)))
-                .order_by(RiskIndex.timestamp.asc())
-                .all()
-            )
+            historic = db.query(RiskIndex).filter(
+                RiskIndex.timestamp >= (datetime.now(timezone.utc) - timedelta(hours=24))
+            ).order_by(RiskIndex.timestamp.asc()).all()
             if len(historic) >= 2:
                 cri_delta = float(historic[-1].cri_score) - float(historic[0].cri_score)
 
-        # Obtener noticias validadadas
         mode_state = get_mode_state()
         news = []
         try:
@@ -699,7 +661,7 @@ async def get_consensus_diff(db: Session = Depends(get_db)):
             validator = NewsValidator()
             news = validator.validate_batch(raw)
         except Exception as e:
-            logger.warning(f"[Consensus] Falló fetch de noticias: {e}")
+            logger.warning(f"[Consensus] Fallo fetch de noticias: {e}")
 
         snapshot = {
             "cri_score": float(latest_cri.cri_score) if latest_cri else None,
@@ -712,21 +674,14 @@ async def get_consensus_diff(db: Session = Depends(get_db)):
 
         consensus = get_consensus_diff()
         result = await consensus.run_committee(snapshot)
-
         return {"status": "success", "data": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en consensus-diff: {str(e)}")
 
 
 @router.get("/gemini-analysis")
-async def get_gemini_analysis(
-    custom_prompt: str = "",
-    db: Session = Depends(get_db),
-):
-    """
-    Genera un reporte ejecutivo del mercado con recomendaciones usando Gemini 2.5 Flash.
-    Incluye: resumen, drivers, recomendaciones y outlook.
-    """
+async def get_gemini_analysis(custom_prompt: str = "", db: Session = Depends(get_db)):
+    """Genera reporte ejecutivo del mercado con Gemini 2.5 Flash."""
     try:
         from app.services.gemini_analysis import get_gemini_analysis
         from app.models import RiskIndex, TMISnapshot
@@ -744,7 +699,6 @@ async def get_gemini_analysis(
             if len(historic) >= 2:
                 cri_delta_24h = float(historic[-1].cri_score) - float(historic[0].cri_score)
 
-        # TMI components
         tmi_str = []
         try:
             comps = TMICalculator.fetch_all_components()
@@ -754,7 +708,6 @@ async def get_gemini_analysis(
             pass
         tmi_components_text = "\n".join(tmi_str) if tmi_str else "No disponible"
 
-        # News pipeline
         news_context, sentiment_data = "No hay noticias recientes.", {"capex_score": 50, "demand_score": 50, "regulatory_score": 50, "summary": "Neutral"}
         try:
             from app.external.rss_feeder import RSSFeeder
@@ -771,14 +724,12 @@ async def get_gemini_analysis(
         except Exception as e:
             logger.warning(f"[GeminiAnalysis] News: {e}")
 
-        # Algorithmic
         cri_vals = [float(r.cri_score) for r in db.query(RiskIndex).filter(
             RiskIndex.timestamp >= (datetime.now(timezone.utc) - timedelta(hours=24))
         ).order_by(RiskIndex.timestamp.asc()).all()]
         zs = get_zscore().compute(cri_vals) if cri_vals else {}
         decay = get_decay_weights().get_effective_weights()
 
-        # Sources
         active, total = 0, 5
         try:
             import requests as http_req
@@ -808,7 +759,6 @@ async def get_gemini_analysis(
         analysis = get_gemini_analysis()
         report = await analysis.generate(snapshot, custom_prompt)
         report["snapshot"] = snapshot
-
         return {"status": "success", "data": report}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en gemini-analysis: {str(e)}")
@@ -816,39 +766,23 @@ async def get_gemini_analysis(
 
 @router.get("/algorithmic-status")
 def get_algorithmic_status(db: Session = Depends(get_db)):
-    """
-    Reporta el estado de las mejoras algorítmicas:
-    - Z-Score de CRI
-    - Pesos dinámicos por confianza (Data Decay)
-    - EMA del CRI
-    """
+    """Reporta el estado de las mejoras algoritmicas (Z-Score, EMA, Decay)."""
     try:
-        from app.services.algorithmic_enhancements import (
-            get_zscore, get_decay_weights, get_cri_ema
-        )
+        from app.services.algorithmic_enhancements import get_zscore, get_decay_weights, get_cri_ema
         from app.models import RiskIndex
 
-        history = (
-            db.query(RiskIndex)
-            .filter(RiskIndex.timestamp >= (datetime.now(timezone.utc) - timedelta(hours=24)))
-            .order_by(RiskIndex.timestamp.asc())
-            .all()
-        )
-
+        history = db.query(RiskIndex).filter(
+            RiskIndex.timestamp >= (datetime.now(timezone.utc) - timedelta(hours=24))
+        ).order_by(RiskIndex.timestamp.asc()).all()
         cri_values = [float(r.cri_score) for r in history]
 
-        # Z-Score
         zscore_engine = get_zscore()
         zscore_result = zscore_engine.compute(cri_values)
-
-        # EMA
         ema_engine = get_cri_ema()
         ema_engine.reset()
         ema_values = [ema_engine.smooth(v) for v in cri_values]
-
-        # Decay
         decay_engine = get_decay_weights()
-        for r in history[-5:]:  # últimas actualizaciones
+        for r in history[-5:]:
             decay_engine.record_update("GSPI")
         decay_report = decay_engine.get_decay_report()
         effective_weights = decay_engine.get_effective_weights()
@@ -856,91 +790,8 @@ def get_algorithmic_status(db: Session = Depends(get_db)):
         return {
             "status": "success",
             "z_score": zscore_result,
-            "ema": {
-                "current": ema_values[-1] if ema_values else None,
-                "last_24h": ema_values,
-                "alpha": 0.3,
-            },
-            "decay": {
-                "report": decay_report,
-                "effective_weights": effective_weights,
-                "rate_per_hour": "5%",
-            },
+            "ema": {"current": ema_values[-1] if ema_values else None, "last_24h": ema_values, "alpha": 0.3},
+            "decay": {"report": decay_report, "effective_weights": effective_weights, "rate_per_hour": "5%"},
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
-
-
-@router.post("/backfill")
-def run_backfill(db: Session = Depends(get_db)):
-    """
-    Ejecuta ingesta historica de 6 meses (180 dias) desde multiples fuentes.
-    Llena la DB con datos para el baseline de proyecciones.
-    
-    Fuentes: Yahoo Finance, CoinGecko, arXiv, HN Algolia, WhatToMine.
-    Duracion estimada: 2-5 minutos.
-    """
-    try:
-        from app.services.backfill import HistoricalBackfill
-        pipeline = HistoricalBackfill(db)
-        results = pipeline.run_full()
-        return {"status": "success", "data": results}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error en backfill: {str(e)}")
-
-
-@router.get("/predictive-status")
-def get_predictive_status(db: Session = Depends(get_db)):
-    """
-    Analisis predictivo completo:
-    - Early Warning System (Critical Slowing Down)
-    - TTD (Time To Danger) estimado en dias
-    - Proyecciones a 30, 60 y 90 dias
-    - Probabilidad de colapso
-    """
-    try:
-        from app.services.predictive_engine import get_predictive_engine
-
-        cutoff = datetime.now(timezone.utc) - timedelta(days=180)
-        rows = (
-            db.query(RiskIndex)
-            .filter(RiskIndex.timestamp >= cutoff)
-            .order_by(RiskIndex.timestamp.asc())
-            .all()
-        )
-        history = [float(r.cri_score) for r in rows]
-
-        engine = get_predictive_engine()
-        result = engine.analyze(history)
-        return {"status": "success", "data": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error predictivo: {str(e)}")
-
-
-@router.get("/projections")
-def get_projections(db: Session = Depends(get_db)):
-    """
-    Proyecciones detalladas de CRI a 30/60/90 dias
-    con intervalos de confianza y probabilidad de colapso.
-    """
-    try:
-        from app.services.predictive_engine import TrendProjector
-
-        cutoff = datetime.now(timezone.utc) - timedelta(days=180)
-        rows = (
-            db.query(RiskIndex)
-            .filter(RiskIndex.timestamp >= cutoff)
-            .order_by(RiskIndex.timestamp.asc())
-            .all()
-        )
-        history = [float(r.cri_score) for r in rows]
-
-        projector = TrendProjector()
-        proj = projector.project(history)
-        proj["history"] = [
-            {"timestamp": r.timestamp.isoformat(), "score": float(r.cri_score)}
-            for r in rows[-90:]
-        ]
-        return {"status": "success", "data": proj}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error en proyecciones: {str(e)}")
