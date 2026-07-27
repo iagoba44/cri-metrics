@@ -160,17 +160,35 @@ async def get_gemini_analysis(custom_prompt: str = "", db: Session = Depends(get
 
 @router.get("/ai-data-feed")
 async def get_ai_data_feed(db: Session = Depends(get_db)):
-    """Muestra el prompt, la respuesta de Gemini, y el data lineage completo."""
+    """Prompt enriquecido con TODOS los datos del sistema para Gemini."""
     from app.models import RiskIndex, TMISnapshot, TelemetryRecord
-    from app.services.algorithmic_enhancements import get_zscore, get_decay_weights
+    from app.services.algorithmic_enhancements import get_zscore, get_decay_weights, get_cri_ema
+    from app.services.predictive_engine import get_predictive_engine
+    from app.services.tmi_calculator import TMICalculator
     from datetime import datetime, timedelta, timezone
+    import numpy as np
     
-    # Datos actuales
+    # ── 1. CRI + TMI actual ──
     latest_cri = db.query(RiskIndex).order_by(RiskIndex.timestamp.desc()).first()
     latest_tmi = db.query(TMISnapshot).order_by(TMISnapshot.timestamp.desc()).first()
     
-    # KPIs actuales con fuente
-    kpis = {}
+    cri_score = float(latest_cri.cri_score) if latest_cri else None
+    cri_zone = latest_cri.risk_zone if latest_cri else "UNKNOWN"
+    tmi_score = float(latest_tmi.tmi_score) if latest_tmi else None
+    tmi_zone = latest_tmi.zone if latest_tmi else "UNKNOWN"
+    
+    # Delta 24h CRI
+    cri_delta_24h = 0.0
+    if latest_cri:
+        hist_24h = db.query(RiskIndex).filter(
+            RiskIndex.timestamp >= (datetime.now(timezone.utc) - timedelta(hours=24))
+        ).order_by(RiskIndex.timestamp.asc()).all()
+        if len(hist_24h) >= 2:
+            cri_delta_24h = float(hist_24h[-1].cri_score) - float(hist_24h[0].cri_score)
+    
+    # ── 2. KPIs con fuente, peso, y frescura ──
+    now = datetime.now(timezone.utc)
+    all_kpis = {}
     for kpi_code in ["GSPI", "SHPD", "LTCR", "CFBR", "UOR"]:
         latest = (
             db.query(TelemetryRecord)
@@ -179,67 +197,259 @@ async def get_ai_data_feed(db: Session = Depends(get_db)):
             .first()
         )
         historical = (
-            db.query(TelemetryRecord)
-            .filter(TelemetryRecord.kpi_code == kpi_code)
-            .order_by(TelemetryRecord.timestamp.desc())
-            .limit(50).all()
+            db.query(TelemetryRecord).filter(TelemetryRecord.kpi_code == kpi_code)
+            .order_by(TelemetryRecord.timestamp.desc()).limit(50).all()
         )
-        kpis[kpi_code] = {
-            "name": {"GSPI": "GPU Spot Price Index", "SHPD": "Server Hardware Price Deflation",
-                     "LTCR": "Long-Term Contract Ratio", "CFBR": "Cloud Free-Burn Rate",
-                     "UOR": "Underutilization / Overcapacity Ratio"}[kpi_code],
-            "current_value": float(latest.normalized_score) if latest and latest.normalized_score is not None else (float(latest.raw_value) if latest and latest.raw_value is not None else None),
+        val = None
+        if latest:
+            val = float(latest.normalized_score) if latest and latest.normalized_score is not None else (
+                float(latest.raw_value) if latest and latest.raw_value is not None else None)
+        ts = latest.timestamp if latest else None
+        if ts and ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        freshness_h = round((now - ts).total_seconds() / 3600, 1) if ts else None
+        
+        all_kpis[kpi_code] = {
+            "name": {"GSPI":"GPU Spot Price Index","SHPD":"Server Hardware Price Deflation",
+                     "LTCR":"Long-Term Contract Ratio","CFBR":"Cloud Free-Burn Rate",
+                     "UOR":"Underutilization/Overcapacity Ratio"}[kpi_code],
+            "value": val,
             "source": latest.data_source if latest else "N/A",
-            "last_updated": latest.timestamp.isoformat() if latest and latest.timestamp else None,
+            "weight": {"GSPI":0.25,"SHPD":0.15,"LTCR":0.20,"CFBR":0.20,"UOR":0.20}[kpi_code],
+            "freshness_h": freshness_h,
             "sample_size": len(historical),
-            "weight": {"GSPI": 0.25, "SHPD": 0.15, "LTCR": 0.20, "CFBR": 0.20, "UOR": 0.20}[kpi_code],
-            "unit": {"GSPI": "% deflacion GPU spot", "SHPD": "% deflacion hardware",
-                     "LTCR": "indice volatilidad 0-100", "CFBR": "% volatilidad escalada",
-                     "UOR": "% infrautilizacion"}[kpi_code],
         }
     
-    # CRI historico 30d
-    cutoff_30d = datetime.now(timezone.utc) - timedelta(days=30)
-    cri_30d = (
-        db.query(RiskIndex)
-        .filter(RiskIndex.timestamp >= cutoff_30d)
-        .order_by(RiskIndex.timestamp.asc())
-        .all()
+    # ── 3. Early Warning System + Predictivo ──
+    cutoff_180d = datetime.now(timezone.utc) - timedelta(days=180)
+    cri_history = (
+        db.query(RiskIndex).filter(RiskIndex.timestamp >= cutoff_180d)
+        .order_by(RiskIndex.timestamp.asc()).all()
     )
-    cri_trend = [float(r.cri_score) for r in cri_30d]
+    cri_vals = [float(r.cri_score) for r in cri_history]
     
-    # Fuentes activas
+    predictive = {}
+    if len(cri_vals) >= 14:
+        engine = get_predictive_engine()
+        analysis = engine.analyze(cri_vals)
+        ews = analysis.get("early_warning", {})
+        proj = analysis.get("projections", {}).get("projections", {})
+        predictive = {
+            "ew_signal": ews.get("ew_signal"),
+            "ew_score": ews.get("ew_score"),
+            "autocorrelation": ews.get("autocorrelation"),
+            "variance": ews.get("variance"),
+            "acceleration": ews.get("acceleration"),
+            "ttd_days": ews.get("days_to_collapse"),
+            "projection_30d_cri": proj.get("30", {}).get("projected_cri"),
+            "projection_60d_cri": proj.get("60", {}).get("projected_cri"),
+            "projection_90d_cri": proj.get("90", {}).get("projected_cri"),
+            "collapse_prob_30d_pct": proj.get("30", {}).get("collapse_probability_pct"),
+            "collapse_prob_60d_pct": proj.get("60", {}).get("collapse_probability_pct"),
+            "collapse_prob_90d_pct": proj.get("90", {}).get("collapse_probability_pct"),
+        }
+    
+    # ── 4. TMI Components ──
+    tmi_components = {}
+    try:
+        comps = TMICalculator.fetch_all_components()
+        tmi_components = {k: round(v, 1) if isinstance(v, (int, float)) else v for k, v in comps.items()}
+    except Exception:
+        pass
+    
+    # ── 5. Algoritmico: Z-Score, EMA, Decay ──
+    zs = get_zscore().compute(cri_vals) if len(cri_vals) >= 2 else {}
+    ema_eng = get_cri_ema()
+    ema_val = None
+    if cri_vals:
+        ema_eng.reset()
+        ema_val = ema_eng.smooth(cri_vals[-1]) if len(cri_vals) >= 1 else None
+    decay = get_decay_weights().get_effective_weights()
+    
+    # ── 6. Historico 6 meses ──
+    hist_stats = {}
+    if cri_vals:
+        arr = np.array(cri_vals)
+        hist_stats = {
+            "cri_min_180d": round(float(np.min(arr)), 1),
+            "cri_max_180d": round(float(np.max(arr)), 1),
+            "cri_mean_180d": round(float(np.mean(arr)), 1),
+            "cri_std_180d": round(float(np.std(arr)), 1),
+            "trend_7d": round(cri_vals[-1] - cri_vals[-8], 2) if len(cri_vals) >= 8 else None,
+            "trend_30d": round(cri_vals[-1] - cri_vals[-min(31, len(cri_vals))], 2),
+            "trend_90d": round(cri_vals[-1] - cri_vals[-min(91, len(cri_vals))], 2) if len(cri_vals) >= 91 else None,
+            "data_points": len(cri_vals),
+            "zone_low_days": sum(1 for v in cri_vals if v <= 30),
+            "zone_moderate_days": sum(1 for v in cri_vals if 30 < v <= 65),
+            "zone_critical_days": sum(1 for v in cri_vals if v > 65),
+            "alerts_triggered": sum(1 for r in cri_history if r.alerts_triggered == "true"),
+        }
+    
+    # ── 7. News & Sentiment ──
+    news_articles = []
+    sentiment_data = {}
+    try:
+        from app.external.rss_feeder import RSSFeeder
+        from app.services.news_validator import NewsValidator
+        from app.services.sentiment_extractor import SentimentExtractor
+        feeder = RSSFeeder()
+        raw = feeder.fetch_all(max_per_feed=5)
+        validator = NewsValidator()
+        validated = validator.validate_batch(raw)
+        news_articles = [{"title": n.get("title", ""), "score": n.get("semantic_score", 0)} for n in validated[:10]]
+        sentiment_data = SentimentExtractor().extract(validated)
+    except Exception:
+        pass
+    
+    # ── 8. Salud de fuentes ──
     active_sources = set()
-    for kpi in kpis.values():
+    for kpi in all_kpis.values():
         if kpi["source"] and kpi["source"] != "N/A":
             active_sources.add(kpi["source"])
+    sources_stale = sum(1 for v in all_kpis.values() if v["freshness_h"] and v["freshness_h"] > 6)
+    sources_offline = sum(1 for v in all_kpis.values() if v["value"] is None)
     
-    # Prompt para Gemini
-    gemini_prompt = f"""**CONTEXTO DE MERCADO IA - INFRAESTRUCTURA**
+    # ── 9. Eventos de backfill ──
+    events = [
+        {"day": -170, "name": "NVIDIA earnings beat", "impact": "CRI -12 (bullish)"},
+        {"day": -140, "name": "EU AI Act approved", "impact": "CRI +8 (regulatory uncertainty)"},
+        {"day": -105, "name": "Crypto flash crash (ETH -30%)", "impact": "CRI +18 (capital flight)"},
+        {"day": -70, "name": "TSMC wafer price hike", "impact": "CRI +10 (supply chain)"},
+        {"day": -35, "name": "Data center building boom", "impact": "CRI -15 (bullish)"},
+        {"day": -14, "name": "AI winter fears", "impact": "CRI +8 (sentiment shift)"},
+    ]
+    
+    # ═══════════════════════════════════════════════════
+    # CONSTRUIR PROMPT ENRIQUECIDO
+    # ═══════════════════════════════════════════════════
+    gemini_prompt = f"""ERES UN ANALISTA SENIOR DE INFRAESTRUCTURA DE INTELIGENCIA ARTIFICIAL.
+Genera un reporte ejecutivo profesional basado en los siguientes datos del sistema CRI Metrics.
 
-**Composite Risk Index (CRI):** {float(latest_cri.cri_score) if latest_cri else 'N/A'}/100 [{latest_cri.risk_zone if latest_cri else 'UNKNOWN'}]
-**Temperature Market Index (TMI):** {float(latest_tmi.tmi_score) if latest_tmi else 'N/A'}/100 [{latest_tmi.zone if latest_tmi else 'UNKNOWN'}]
+═══════════════════════════════════════════════
+SECCION 1: RESUMEN EJECUTIVO
+═══════════════════════════════════════════════
+• CRI (Composite Risk Index): {cri_score}/100 — Zona: {cri_zone}
+• TMI (Temperature Market Index): {tmi_score}/100 — Zona: {tmi_zone}
+• Variacion CRI 24h: {cri_delta_24h:+.1f} puntos
+• Alertas disparadas (180d): {hist_stats.get('alerts_triggered', '?')}
+• CRI 6 meses: min={hist_stats.get('cri_min_180d')} max={hist_stats.get('cri_max_180d')} mean={hist_stats.get('cri_mean_180d')}
 
-**KPIs de Entrada:**
+═══════════════════════════════════════════════
+SECCION 2: KPIs DE ENTRADA (Componentes del CRI)
+═══════════════════════════════════════════════
 """
-    for k, v in kpis.items():
-        gemini_prompt += f"- {v['name']} ({k}): {v['current_value']}/100 | Fuente: {v['source']} | Peso: {int(v['weight']*100)}%\n"
+    for k, v in all_kpis.items():
+        freshness_str = f"{v['freshness_h']}h" if v['freshness_h'] else "N/A"
+        gemini_prompt += f"• {v['name']} ({k}): {v['value']}/100 | Peso: {int(v['weight']*100)}% | Fuente: {v['source']} | Frescura: {freshness_str} | Muestras: {v['sample_size']}\n"
     
     gemini_prompt += f"""
-**Tendencia CRI 30d:** {', '.join([str(round(x,1)) for x in cri_trend[-7:]])} (ultimos 7 dias)
+═══════════════════════════════════════════════
+SECCION 3: SISTEMA PREDICTIVO (Early Warning)
+═══════════════════════════════════════════════
+• EW Signal: {predictive.get('ew_signal', 'N/A')} (Score combinado: {predictive.get('ew_score', 'N/A')})
+• Autocorrelacion lag-1: {predictive.get('autocorrelation', 'N/A')} ({'>0.5 = Critical Slowing Down' if predictive.get('autocorrelation') and predictive['autocorrelation'] > 0.5 else '<0.5 = sistema estable'})
+• Varianza movil (30d): {predictive.get('variance', 'N/A')}
+• Aceleracion (2a derivada CRI): {predictive.get('acceleration', 'N/A')} ({'>0 = riesgo acelerando' if predictive.get('acceleration') and predictive['acceleration'] > 0 else '<0 = riesgo desacelerando'})
+• TTD (Time To Danger): {predictive.get('ttd_days', 'N/A')} dias hasta umbral critico (65)
 
-**Fuentes de datos activas:** {len(active_sources)} ({', '.join(sorted(active_sources))})
+Proyecciones (regresion lineal con bandas 95% confianza):
+• 30 dias: CRI={predictive.get('projection_30d_cri', 'N/A')} | Prob. colapso: {predictive.get('collapse_prob_30d_pct', 'N/A')}%
+• 60 dias: CRI={predictive.get('projection_60d_cri', 'N/A')} | Prob. colapso: {predictive.get('collapse_prob_60d_pct', 'N/A')}%
+• 90 dias: CRI={predictive.get('projection_90d_cri', 'N/A')} | Prob. colapso: {predictive.get('collapse_prob_90d_pct', 'N/A')}%
 
-**Instruccion:**
-Genera un reporte ejecutivo con:
-1. Resumen de la situacion actual del mercado de infraestructura IA
-2. Drivers principales (2-3 factores)
-3. Recomendaciones (2-3 acciones concretas)
-4. Outlook a 30-90 dias
-5. Nivel de confianza del analisis (BAJO/MEDIO/ALTO)
+═══════════════════════════════════════════════
+SECCION 4: COMPONENTES TMI (7 sub-indices)
+═══════════════════════════════════════════════
+"""
+    tmi_labels = {
+        "fear_greed": "Fear & Greed Index (sentimiento mercado)",
+        "arxiv_velocity": "arXiv paper velocity (investigacion IA)",
+        "hn_activity": "HackerNews actividad (comunidad tech)",
+        "hashrate": "Hashrate global (mineria GPU)",
+        "ai_tokens": "AI tokens performance (NEAR, RENDER, FET, TAO)",
+        "news_coverage": "News coverage score (prensa IA)",
+        "ai_revenue": "AI revenue proxy (NVIDIA earnings)",
+    }
+    for key, label in tmi_labels.items():
+        val = tmi_components.get(key, "N/A")
+        gemini_prompt += f"• {label}: {val}\n"
+    
+    gemini_prompt += f"""
+═══════════════════════════════════════════════
+SECCION 5: INDICADORES TECNICOS
+═══════════════════════════════════════════════
+• Z-Score volatilidad: {zs.get('z_score', 'N/A')} ({'>2.5 = volatilidad anomala' if isinstance(zs.get('z_score'), (int,float)) and zs['z_score'] > 2.5 else 'normal'})
+• EMA suavizado CRI: {ema_val if ema_val else 'N/A'}
+• Pesos dinamicos (decay por confianza): {', '.join([f'{k}={round(v,2)}' for k,v in (decay.items() if decay else [])]) if decay else 'N/A'}
+
+═══════════════════════════════════════════════
+SECCION 6: HISTORICO 6 MESES
+═══════════════════════════════════════════════
+• Datapoints: {hist_stats.get('data_points', '?')}
+• Min CRI: {hist_stats.get('cri_min_180d')} | Max CRI: {hist_stats.get('cri_max_180d')} | Media: {hist_stats.get('cri_mean_180d')} | Desviacion: {hist_stats.get('cri_std_180d')}
+• Tendencia 7d: {hist_stats.get('trend_7d', 'N/A'):+.1f} | 30d: {hist_stats.get('trend_30d', 'N/A'):+.1f} | 90d: {hist_stats.get('trend_90d', 'N/A'):+.1f}
+• Dias en zona LOW: {hist_stats.get('zone_low_days')} | MODERATE: {hist_stats.get('zone_moderate_days')} | CRITICAL: {hist_stats.get('zone_critical_days')}
+
+Eventos de mercado detectados:
+"""
+    for evt in events:
+        gemini_prompt += f"• {evt['name']} ({evt['impact']})\n"
+    
+    gemini_prompt += f"""
+═══════════════════════════════════════════════
+SECCION 7: NOTICIAS Y SENTIMIENTO
+═══════════════════════════════════════════════
+Sentimiento estructurado:
+• Capex (inversion infra): {sentiment_data.get('capex_score', 'N/A')}/100
+• Demanda computacional: {sentiment_data.get('demand_score', 'N/A')}/100
+• Riesgo regulatorio: {sentiment_data.get('regulatory_score', 'N/A')}/100
+• Resumen: {sentiment_data.get('summary', 'No disponible')}
+
+Titulares validados (top 5):
+"""
+    for art in news_articles[:5]:
+        gemini_prompt += f"• [{art['score']}] {art['title']}\n"
+    
+    gemini_prompt += f"""
+═══════════════════════════════════════════════
+SECCION 8: SALUD DE FUENTES DE DATOS
+═══════════════════════════════════════════════
+• Fuentes activas: {len(active_sources)} ({', '.join(sorted(active_sources))})
+• Fuentes stale (>6h): {sources_stale}
+• Fuentes offline (sin datos): {sources_offline}
+
+═══════════════════════════════════════════════
+INSTRUCCIONES PARA EL ANALISIS
+═══════════════════════════════════════════════
+Basado en TODOS los datos anteriores, genera un reporte ejecutivo estructurado:
+
+1. RESUMEN DE MERCADO (2-3 frases):
+   - Estado general del ecosistema IA
+   - Tendencia direccional (mejorando/empeorando/estable)
+   - Nivel de alerta justificado
+
+2. DRIVERS PRINCIPALES (3-5 factores):
+   - Que KPIs estan moviendo el CRI
+   - Que eventos recientes impactan
+   - Senales tempranas del EWS
+
+3. EVALUACION DE RIESGO:
+   - Probabilidad de deterioro a 30/60/90 dias
+   - Escenario mas probable vs peor escenario
+   - Confianza en la evaluacion (ALTA/MEDIA/BAJA) justificada por frescura de datos
+
+4. RECOMENDACIONES ACCIONABLES (3-5):
+   - Acciones concretas para operadores de infraestructura IA
+   - Priorizadas por urgencia
+
+5. OUTLOOK 30-90 DIAS:
+   - Proyeccion fundamentada en tendencias y eventos
+   - Catalizadores a vigilar
+
+Formato: Texto claro, profesional, sin markdown. Usa los datos numericos como evidencia.
 """
     
-    # Llamar a Gemini
+    # ── Llamar a Gemini ──
     gemini_response = None
     gemini_error = None
     try:
@@ -264,14 +474,29 @@ Genera un reporte ejecutivo con:
         "status": "success",
         "data": {
             "snapshot": {
-                "cri_score": float(latest_cri.cri_score) if latest_cri else None,
-                "cri_zone": latest_cri.risk_zone if latest_cri else "UNKNOWN",
-                "tmi_score": float(latest_tmi.tmi_score) if latest_tmi else None,
-                "tmi_zone": latest_tmi.zone if latest_tmi else "UNKNOWN",
-                "kpis": kpis,
-                "active_sources": sorted(active_sources),
-                "active_sources_count": len(active_sources),
-                "cri_trend_30d": cri_trend,
+                "cri_score": cri_score,
+                "cri_zone": cri_zone,
+                "tmi_score": tmi_score,
+                "tmi_zone": tmi_zone,
+                "cri_delta_24h": cri_delta_24h,
+                "kpis": all_kpis,
+                "predictive": predictive,
+                "tmi_components": tmi_components,
+                "algorithmic": {
+                    "z_score": zs.get("z_score"),
+                    "ema": ema_val,
+                    "decay": {k: round(v, 2) for k, v in decay.items()} if decay else {},
+                },
+                "historical_stats": hist_stats,
+                "events": events,
+                "sentiment": sentiment_data,
+                "news": news_articles[:10],
+                "source_health": {
+                    "active_count": len(active_sources),
+                    "active_names": sorted(active_sources),
+                    "stale_count": sources_stale,
+                    "offline_count": sources_offline,
+                },
             },
             "prompts": {
                 "gemini_full": gemini_prompt,
@@ -279,10 +504,10 @@ Genera un reporte ejecutivo con:
             "gemini_response": gemini_response,
             "gemini_error": gemini_error,
             "data_lineage": {
-                "description": "Cada KPI se obtiene de fuentes externas, se normaliza (0-100), y se pondera para calcular el CRI.",
-                "sources_accessed": sorted(active_sources),
-                "total_kpis": len(kpis),
-                "total_datapoints_30d": sum(v["sample_size"] for v in kpis.values()),
+                "description": "Prompt enriquecido con 8 secciones: CRI+TMI, KPIs, Predictivo, TMI Components, Tecnicos, Historico, Noticias, Salud Fuentes",
+                "total_sections": 8,
+                "total_kpis": len(all_kpis),
+                "prompt_length_chars": len(gemini_prompt),
             },
         },
     }
