@@ -68,3 +68,11 @@ def get_source_metrics(db: Session = Depends(get_db)):
         })
 
     return {"status": "success", "metrics": result}
+
+
+@router.get("/db-status")
+def get_db_status():
+    """Estado de la conexion a base de datos."""
+    from app.database import check_db_connection
+    result = check_db_connection()
+    return {"status": "success", "data": result}

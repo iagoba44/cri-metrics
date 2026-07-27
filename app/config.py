@@ -50,6 +50,14 @@ class Settings(BaseSettings):
     # Configuración de news validator
     NEWS_SIMILARITY_THRESHOLD: float = 0.35
     
+    # Base de datos
+    DB_ENGINE: str = "sqlite"  # sqlite | postgres
+    POSTGRES_HOST: str = "localhost"
+    POSTGRES_PORT: int = 5432
+    POSTGRES_DB: str = "cri_metrics"
+    POSTGRES_USER: str = "cri"
+    POSTGRES_PASSWORD: str = ""
+
     model_config = SettingsConfigDict(env_file=".env")
 
 @lru_cache()

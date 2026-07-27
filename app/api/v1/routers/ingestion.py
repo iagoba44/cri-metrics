@@ -43,3 +43,15 @@ def run_backfill(db: Session = Depends(get_db)):
         return {"status": "success", "data": results}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en backfill: {str(e)}")
+
+
+@router.post("/enhanced-backfill")
+def run_enhanced_backfill(db: Session = Depends(get_db)):
+    """Genera 6 meses de datos sinteticos realistas con eventos de mercado."""
+    try:
+        from app.services.enhanced_backfill import EnhancedBackfill
+        pipeline = EnhancedBackfill(db)
+        results = pipeline.generate()
+        return {"status": "success", "data": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")

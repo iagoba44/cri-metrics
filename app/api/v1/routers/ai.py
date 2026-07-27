@@ -154,3 +154,118 @@ async def get_gemini_analysis(custom_prompt: str = "", db: Session = Depends(get
         return {"status": "success", "data": report}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en gemini-analysis: {str(e)}")
+
+
+@router.get("/ai-data-feed")
+def get_ai_data_feed(db: Session = Depends(get_db)):
+    """Muestra exactamente que datos y prompt se envian a los LLMs (Gemini + Consensus)."""
+    from app.models import RiskIndex, TMISnapshot, TelemetryRecord
+    from app.services.algorithmic_enhancements import get_zscore, get_decay_weights
+    from datetime import datetime, timedelta, timezone
+    
+    # Datos actuales
+    latest_cri = db.query(RiskIndex).order_by(RiskIndex.timestamp.desc()).first()
+    latest_tmi = db.query(TMISnapshot).order_by(TMISnapshot.timestamp.desc()).first()
+    
+    # KPIs actuales con fuente
+    kpis = {}
+    for kpi_code in ["GSPI", "SHPD", "LTCR", "CFBR", "UOR"]:
+        latest = (
+            db.query(TelemetryRecord)
+            .filter(TelemetryRecord.kpi_code == kpi_code)
+            .order_by(TelemetryRecord.timestamp.desc())
+            .first()
+        )
+        historical = (
+            db.query(TelemetryRecord)
+            .filter(TelemetryRecord.kpi_code == kpi_code)
+            .order_by(TelemetryRecord.timestamp.desc())
+            .limit(50).all()
+        )
+        kpis[kpi_code] = {
+            "name": {"GSPI": "GPU Spot Price Index", "SHPD": "Server Hardware Price Deflation",
+                     "LTCR": "Long-Term Contract Ratio", "CFBR": "Cloud Free-Burn Rate",
+                     "UOR": "Underutilization / Overcapacity Ratio"}[kpi_code],
+            "current_value": float(latest.normalized_score) if latest and latest.normalized_score else None,
+            "source": latest.data_source if latest else "N/A",
+            "last_updated": latest.timestamp.isoformat() if latest and latest.timestamp else None,
+            "sample_size": len(historical),
+            "weight": {"GSPI": 0.25, "SHPD": 0.15, "LTCR": 0.20, "CFBR": 0.20, "UOR": 0.20}[kpi_code],
+            "unit": {"GSPI": "% deflacion GPU spot", "SHPD": "% deflacion hardware",
+                     "LTCR": "indice volatilidad 0-100", "CFBR": "% volatilidad escalada",
+                     "UOR": "% infrautilizacion"}[kpi_code],
+        }
+    
+    # CRI historico 30d para contexto
+    cutoff_30d = datetime.now(timezone.utc) - timedelta(days=30)
+    cri_30d = (
+        db.query(RiskIndex)
+        .filter(RiskIndex.timestamp >= cutoff_30d)
+        .order_by(RiskIndex.timestamp.asc())
+        .all()
+    )
+    cri_trend = [float(r.cri_score) for r in cri_30d]
+    
+    # Fuentes activas
+    active_sources = set()
+    for kpi in kpis.values():
+        if kpi["source"] and kpi["source"] != "N/A":
+            active_sources.add(kpi["source"])
+    
+    # Construir el prompt que se enviaria a Gemini
+    gemini_prompt = f"""**CONTEXTO DE MERCADO IA - INFRAESTRUCTURA**
+
+**Composite Risk Index (CRI):** {float(latest_cri.cri_score) if latest_cri else 'N/A'}/100 [{latest_cri.risk_zone if latest_cri else 'UNKNOWN'}]
+**Temperature Market Index (TMI):** {float(latest_tmi.tmi_score) if latest_tmi else 'N/A'}/100 [{latest_tmi.zone if latest_tmi else 'UNKNOWN'}]
+
+**KPIs de Entrada:**
+"""
+    for k, v in kpis.items():
+        gemini_prompt += f"- {v['name']} ({k}): {v['current_value']}/100 | Fuente: {v['source']} | Peso: {int(v['weight']*100)}%\n"
+    
+    gemini_prompt += f"""
+**Tendencia CRI 30d:** {', '.join([str(round(x,1)) for x in cri_trend[-7:]])} (ultimos 7 dias)
+
+**Fuentes de datos activas:** {len(active_sources)} ({', '.join(sorted(active_sources))})
+
+**Instruccion:**
+Genera un reporte ejecutivo con:
+1. Resumen de la situacion actual del mercado de infraestructura IA
+2. Drivers principales (2-3 factores)
+3. Recomendaciones (2-3 acciones concretas)
+4. Outlook a 30-90 dias
+5. Nivel de confianza del analisis (BAJO/MEDIO/ALTO)
+"""
+    
+    # Consensus diff prompt (mas breve)
+    consensus_prompt = f"""Evalua el riesgo del mercado de infraestructura IA (0-100):
+- CRI algoritmico: {float(latest_cri.cri_score) if latest_cri else 'N/A'}
+- TMI: {float(latest_tmi.tmi_score) if latest_tmi else 'N/A'}
+- KPIs: {', '.join([f'{k}={v["current_value"]}' for k,v in kpis.items() if v["current_value"] is not None])}
+Responde solo con un numero (0-100)."""
+
+    return {
+        "status": "success",
+        "data": {
+            "snapshot": {
+                "cri_score": float(latest_cri.cri_score) if latest_cri else None,
+                "cri_zone": latest_cri.risk_zone if latest_cri else "UNKNOWN",
+                "tmi_score": float(latest_tmi.tmi_score) if latest_tmi else None,
+                "tmi_zone": latest_tmi.zone if latest_tmi else "UNKNOWN",
+                "kpis": kpis,
+                "active_sources": sorted(active_sources),
+                "active_sources_count": len(active_sources),
+                "cri_trend_30d": cri_trend,
+            },
+            "prompts": {
+                "gemini_full": gemini_prompt,
+                "consensus_short": consensus_prompt,
+            },
+            "data_lineage": {
+                "description": "Cada KPI se obtiene de fuentes externas, se normaliza (0-100), y se pondera para calcular el CRI.",
+                "sources_accessed": sorted(active_sources),
+                "total_kpis": len(kpis),
+                "total_datapoints_30d": sum(v["sample_size"] for v in kpis.values()),
+            },
+        },
+    }
