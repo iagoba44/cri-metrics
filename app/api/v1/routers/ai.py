@@ -188,7 +188,7 @@ async def get_ai_data_feed(db: Session = Depends(get_db)):
             "name": {"GSPI": "GPU Spot Price Index", "SHPD": "Server Hardware Price Deflation",
                      "LTCR": "Long-Term Contract Ratio", "CFBR": "Cloud Free-Burn Rate",
                      "UOR": "Underutilization / Overcapacity Ratio"}[kpi_code],
-            "current_value": float(latest.normalized_score) if latest and latest.normalized_score else None,
+            "current_value": float(latest.normalized_score) if latest and latest.normalized_score is not None else (float(latest.raw_value) if latest and latest.raw_value is not None else None),
             "source": latest.data_source if latest else "N/A",
             "last_updated": latest.timestamp.isoformat() if latest and latest.timestamp else None,
             "sample_size": len(historical),
