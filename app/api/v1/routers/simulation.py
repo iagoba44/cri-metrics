@@ -67,3 +67,35 @@ def set_mode(payload: dict):
         "message": f"Modo cambiado a {new_mode}",
         **mode_state.get_status(),
     }
+
+
+@router.get("/simulation-compare")
+def compare_scenarios(scenario_a: str = "crypto_crash", scenario_b: str = "ai_utopia"):
+    """Comparativa lado a lado de dos escenarios con todos sus KPIs."""
+    from app.scenarios import get_zone, _preview_cri
+
+    scenarios = {}
+    for sid in [scenario_a, scenario_b]:
+        s = SCENARIOS.get(sid)
+        if not s:
+            raise HTTPException(status_code=400, detail=f"Escenario no encontrado: {sid}")
+        cri = _preview_cri(s["params"])
+        kpi_detail = {}
+        for kpi, val in s["params"].items():
+            kpi_detail[kpi] = {
+                "value": val,
+                "bar_pct": val,  # % para barra visual
+                "impact": "high" if abs(val - 50) > 30 else "medium" if abs(val - 50) > 15 else "low",
+            }
+        scenarios[sid] = {
+            "id": s["id"],
+            "name": s["name"],
+            "description": s["description"],
+            "icon": s["icon"],
+            "color": s["color"],
+            "cri": cri,
+            "zone": get_zone(cri),
+            "kpis": kpi_detail,
+        }
+
+    return {"status": "success", "data": scenarios}

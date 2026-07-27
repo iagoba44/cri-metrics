@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>CRI Metrics | Predictive Intelligence</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3"></script>
+<style>
+    :root {
+        --bg-root: #0d1117;
+        --bg-card: #161e27;
+        --bg-card-hover: #1c2630;
+        --border-card: rgba(48,54,61,0.8);
+        --text-primary: #dae3ee;
+        --text-muted: #8b919d;
+        --text-label: #c0c7d4;
+        --color-green: #3fb950;
+        --color-yellow: #d29922;
+        --color-red: #f85149;
+        --color-blue: #58a6ff;
+        --color-blue-dim: #a2c9ff;
+        --surface-low: #0b141c;
+        --surface-high: #182028;
+        --grid-color: rgba(162,201,255,0.04);
+        --font-mono: 'JetBrains Mono', monospace;
+        --font-sans: 'Inter', sans-serif;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+        background-color: #000000;
+        background-image:
+            linear-gradient(var(--grid-color) 1px, transparent 1px),
+            linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+        background-size: 20px 20px;
+        color: var(--text-primary);
+        font-family: var(--font-sans);
+        min-height: 100vh;
+        overflow-x: hidden;
+    }
+    .glass-panel {
+        background: rgba(22,27,34,0.7);
+        backdrop-filter: blur(12px);
+        border: 1px solid var(--border-card);
+        border-radius: 12px;
+        box-shadow: inset 0 1px 1px rgba(255,255,255,0.05);
+    }
+    .glass-panel:hover {
+        border-color: #414752;
+        box-shadow: 0 0 15px rgba(88,166,255,0.08);
+    }
+
+    /* Header */
+    header {
+        position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 0 40px; height: 64px;
+        background: rgba(22,27,34,0.85);
+        backdrop-filter: blur(12px);
+        border-bottom: 1px solid var(--border-card);
+    }
+    .header-left { display: flex; align-items: center; gap: 16px; }
+    .header-logo { font-family: var(--font-mono); font-size: 18px; font-weight: 700; color: var(--color-blue-dim); letter-spacing: -0.02em; }
+    .header-title { font-family: var(--font-sans); font-size: 24px; font-weight: 600; color: var(--text-primary); }
+    .live-badge { display: flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 12px; background: rgba(63,185,80,0.12); border: 1px solid rgba(63,185,80,0.3); }
+    .live-badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-green); animation: pulse-live 2s infinite ease-in-out; }
+    .live-badge .text { font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--color-green); letter-spacing: 0.08em; }
+    @keyframes pulse-live {
+        0% { transform: scale(0.9); opacity: 0.5; }
+        50% { transform: scale(1.15); opacity: 1; }
+        100% { transform: scale(0.9); opacity: 0.5; }
+    }
+    .btn-back {
+        display: flex; align-items: center; gap: 6px;
+        padding: 8px 16px; border-radius: 8px;
+        background: var(--surface-high); border: 1px solid var(--border-card);
+        color: var(--text-primary); font-family: var(--font-mono); font-size: 12px;
+        cursor: pointer; text-decoration: none; transition: all 0.2s;
+    }
+    .btn-back:hover { background: rgba(48,54,61,0.6); border-color: #414752; }
+
+    /* Main */
+    main {
+        margin-top: 64px; padding: 32px 40px 80px;
+        max-width: 1440px; margin-left: auto; margin-right: auto;
+        display: flex; flex-direction: column; gap: 24px;
+    }
+
+    /* Row 1: KPI Cards */
+    .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 16px;
+    }
+    .kpi-card {
+        padding: 20px; text-align: center;
+        display: flex; flex-direction: column; align-items: center; gap: 8px;
+    }
+    .kpi-card .value {
+        font-family: var(--font-mono); font-size: 28px; font-weight: 700;
+        line-height: 1; letter-spacing: -0.03em;
+    }
+    .kpi-card .label {
+        font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+        letter-spacing: 0.08em; color: var(--text-muted); text-transform: uppercase;
+    }
+    .kpi-card .sub {
+        font-family: var(--font-mono); font-size: 9px; color: var(--text-muted);
+        opacity: 0.6;
+    }
+
+    /* Row 2: Charts */
+    .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .chart-panel { padding: 20px; }
+    .chart-panel .chart-title {
+        font-family: var(--font-sans); font-size: 16px; font-weight: 600;
+        color: var(--text-primary); margin-bottom: 12px;
+    }
+    .chart-wrap { position: relative; height: 300px; background: var(--surface-low); border-radius: 8px; border: 1px solid rgba(48,54,61,0.4); padding: 8px; }
+
+    /* Row 3: Input Data */
+    .input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .input-panel { padding: 20px; }
+    .input-panel .panel-title {
+        font-family: var(--font-sans); font-size: 16px; font-weight: 600;
+        color: var(--text-primary); margin-bottom: 16px;
+    }
+    .kpi-input-cards { display: flex; flex-direction: column; gap: 12px; }
+    .input-card {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 12px 16px; background: rgba(11,20,28,0.6);
+        border: 1px solid rgba(48,54,61,0.5); border-radius: 8px;
+    }
+    .input-card .input-name {
+        font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--text-primary);
+        min-width: 60px;
+    }
+    .input-card .input-value {
+        font-family: var(--font-mono); font-size: 16px; font-weight: 700;
+        padding: 2px 10px; border-radius: 4px; min-width: 50px; text-align: center;
+    }
+    .input-card .input-source {
+        font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
+    }
+    .input-card .input-weight {
+        font-family: var(--font-mono); font-size: 11px; color: var(--color-blue-dim);
+        padding: 2px 8px; background: rgba(88,166,255,0.1); border-radius: 4px;
+    }
+    .stat-table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 12px; }
+    .stat-table th {
+        text-align: left; padding: 10px 12px;
+        color: var(--text-muted); font-weight: 700; font-size: 10px;
+        letter-spacing: 0.08em; text-transform: uppercase;
+        border-bottom: 1px solid rgba(48,54,61,0.5);
+    }
+    .stat-table td {
+        padding: 10px 12px; color: var(--text-primary);
+        border-bottom: 1px solid rgba(48,54,61,0.2);
+    }
+    .stat-table tr:hover td { background: rgba(48,54,61,0.15); }
+    .stat-table .metric-name { color: var(--text-label); font-weight: 500; }
+    .stat-table .metric-value { text-align: right; font-weight: 600; }
+
+    /* Row 4: Explanation */
+    .explain-section { }
+    .explain-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 16px 20px; cursor: pointer; user-select: none;
+    }
+    .explain-header .explain-title {
+        font-family: var(--font-sans); font-size: 16px; font-weight: 600;
+        color: var(--text-primary); display: flex; align-items: center; gap: 10px;
+    }
+    .explain-header .material-symbols-outlined {
+        transition: transform 0.3s ease; color: var(--text-muted);
+    }
+    .explain-header.expanded .material-symbols-outlined { transform: rotate(180deg); }
+    .explain-body {
+        max-height: 0; overflow: hidden; transition: max-height 0.4s ease, padding 0.4s ease;
+    }
+    .explain-body.open { max-height: 2000px; }
+    .explain-grid {
+        display: grid; grid-template-columns: repeat(2, 1fr);
+        gap: 16px; padding: 0 20px 20px;
+    }
+    .explain-card {
+        padding: 16px; background: rgba(11,20,28,0.5);
+        border: 1px solid rgba(48,54,61,0.4); border-radius: 8px;
+    }
+    .explain-card .explain-card-title {
+        font-family: var(--font-mono); font-size: 13px; font-weight: 700;
+        color: var(--color-blue); margin-bottom: 8px;
+    }
+    .explain-card .explain-card-desc {
+        font-family: var(--font-sans); font-size: 13px; line-height: 1.6;
+        color: var(--text-label);
+    }
+
+    /* Loading / Error states */
+    .loading-text { color: var(--text-muted); font-family: var(--font-mono); font-size: 13px; }
+    .error-text { color: var(--color-red); font-family: var(--font-mono); font-size: 12px; }
+    .refresh-indicator {
+        font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
+        opacity: 0.5; text-align: center; margin-top: 16px;
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+        header { padding: 0 16px; flex-wrap: wrap; height: auto; padding-top: 10px; padding-bottom: 10px; gap: 8px; }
+        .header-title { font-size: 18px; }
+        main { padding: 16px; margin-top: 80px; }
+        .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+        .charts-grid { grid-template-columns: 1fr; }
+        .input-grid { grid-template-columns: 1fr; }
+        .explain-grid { grid-template-columns: 1fr; }
+        .kpi-card .value { font-size: 22px; }
+    }
+    @media (max-width: 500px) {
+        .kpi-grid { grid-template-columns: 1fr 1fr; }
+        header { padding: 8px 12px; }
+        .header-logo { font-size: 14px; }
+        .header-title { font-size: 16px; }
+        .btn-back { padding: 6px 10px; font-size: 10px; }
+    }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-left">
+        <span class="header-logo">CRI METRICS</span>
+        <span class="header-title">Predictive Intelligence</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;">
+        <div class="live-badge">
+            <div class="dot"></div>
+            <span class="text">LIVE</span>
+        </div>
+        <a href="index.html" class="btn-back">
+            <span class="material-symbols-outlined" style="font-size:16px;">arrow_back</span>
+            Main Dashboard
+        </a>
+    </div>
+</header>
+
+<main>
+
+    <!-- Row 1: KPI Cards -->
+    <div class="kpi-grid" id="kpi-grid">
+        <div class="glass-panel kpi-card"><span class="value" id="card-ttd">--</span><span class="label">TTD (days)</span><span class="sub">Time To Danger</span></div>
+        <div class="glass-panel kpi-card"><span class="value" id="card-ew">--</span><span class="label">EW Signal</span><span class="sub">Early Warning</span></div>
+        <div class="glass-panel kpi-card"><span class="value" id="card-col">--</span><span class="label">Collapse 30d</span><span class="sub">Probability %</span></div>
+        <div class="glass-panel kpi-card"><span class="value" id="card-acf">--</span><span class="label">Autocorrelation</span><span class="sub">Lag-1 Pearson</span></div>
+        <div class="glass-panel kpi-card"><span class="value" id="card-var">--</span><span class="label">Variance</span><span class="sub">CRI Dispersion</span></div>
+        <div class="glass-panel kpi-card"><span class="value" id="card-acc">--</span><span class="label">Acceleration</span><span class="sub">2nd Derivative</span></div>
+    </div>
+
+    <!-- Row 2: Charts -->
+    <div class="charts-grid">
+        <div class="glass-panel chart-panel">
+            <div class="chart-title">EWS Rolling Window</div>
+            <div class="chart-wrap"><canvas id="ewsChart"></canvas></div>
+        </div>
+        <div class="glass-panel chart-panel">
+            <div class="chart-title">CRI Forecast (30 / 60 / 90 days)</div>
+            <div class="chart-wrap"><canvas id="forecastChart"></canvas></div>
+        </div>
+    </div>
+
+    <!-- Row 3: Input Data Context -->
+    <div class="input-grid">
+        <div class="glass-panel input-panel">
+            <div class="panel-title">KPI Input Summary</div>
+            <div class="kpi-input-cards" id="kpi-input-list">
+                <div class="loading-text">Loading KPI inputs...</div>
+            </div>
+        </div>
+        <div class="glass-panel input-panel">
+            <div class="panel-title">Statistical Summary</div>
+            <table class="stat-table" id="stat-table">
+                <tr><th>Metric</th><th>Value</th></tr>
+                <tr><td class="metric-name">Mean</td><td class="metric-value">--</td></tr>
+                <tr><td class="metric-name">Std Dev</td><td class="metric-value">--</td></tr>
+                <tr><td class="metric-name">Min</td><td class="metric-value">--</td></tr>
+                <tr><td class="metric-name">Max</td><td class="metric-value">--</td></tr>
+                <tr><td class="metric-name">Trend 7d</td><td class="metric-value">--</td></tr>
+                <tr><td class="metric-name">Trend 30d</td><td class="metric-value">--</td></tr>
+                <tr><td class="metric-name">Date Range</td><td class="metric-value">--</td></tr>
+                <tr><td class="metric-name">Data Points</td><td class="metric-value">--</td></tr>
+            </table>
+        </div>
+    </div>
+
+    <!-- Row 4: Explanation -->
+    <div class="glass-panel explain-section" id="explain-section">
+        <div class="explain-header expanded" id="explain-toggle" onclick="toggleExplain()">
+            <span class="explain-title">
+                <span class="material-symbols-outlined">science</span>
+                Methodology: Early Warning System Indicators
+            </span>
+            <span class="material-symbols-outlined">expand_less</span>
+        </div>
+        <div class="explain-body open" id="explain-body">
+            <div class="explain-grid">
+                <div class="explain-card">
+                    <div class="explain-card-title">Autocorrelation (lag-1)</div>
+                    <div class="explain-card-desc">Mide la inercia del sistema. Valores &gt;0.5 indican Critical Slowing Down: el sistema tarda m&aacute;s en recuperarse de perturbaciones. Es la se&ntilde;al m&aacute;s fiable de transici&oacute;n de fase en sistemas complejos.</div>
+                </div>
+                <div class="explain-card">
+                    <div class="explain-card-title">Variance</div>
+                    <div class="explain-card-desc">Dispersi&oacute;n de los valores CRI en la ventana de 30 d&iacute;as. Una varianza creciente indica inestabilidad.</div>
+                </div>
+                <div class="explain-card">
+                    <div class="explain-card-title">Acceleration</div>
+                    <div class="explain-card-desc">2&ordf; derivada del CRI. Positiva y creciente = el riesgo se acelera. Negativa = el riesgo se desacelera.</div>
+                </div>
+                <div class="explain-card">
+                    <div class="explain-card-title">EW Score</div>
+                    <div class="explain-card-desc">Score combinado de los 3 indicadores. 0=NORMAL, 1=COLAPSO INMINENTE.</div>
+                </div>
+                <div class="explain-card">
+                    <div class="explain-card-title">TTD (Time To Danger)</div>
+                    <div class="explain-card-desc">Regresi&oacute;n lineal simple sobre los &uacute;ltimos 30 puntos para estimar cu&aacute;ntos d&iacute;as hasta cruzar el umbral de 65.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="refresh-indicator" id="refresh-msg">Data refreshes every 60s</div>
+
+</main>
+
+<script>
+    const API_BASE = '/api/v1';
+
+    async function apiCall(method, endpoint) {
+        try {
+            const res = await fetch(API_BASE + endpoint, {
+                method,
+                headers: { 'Content-Type': 'application/json' }
+            });
+            if (!res.ok) throw new Error(await res.text());
+            return await res.json();
+        } catch (e) {
+            console.error('API error:', endpoint, e.message);
+            return null;
+        }
+    }
+
+    function fmtNum(v, decimals) {
+        if (v === null || v === undefined || isNaN(v)) return '--';
+        return Number(v).toFixed(decimals || 2);
+    }
+
+    function colorForTTD(days) {
+        if (days === null || days === undefined || days === 'N/A') return 'var(--text-primary)';
+        if (days < 30) return 'var(--color-red)';
+        if (days < 90) return 'var(--color-yellow)';
+        return 'var(--color-green)';
+    }
+
+    function colorForEW(signal) {
+        if (!signal) return 'var(--text-primary)';
+        const s = signal.toUpperCase();
+        if (s === 'CRITICAL') return 'var(--color-red)';
+        if (s === 'PRE_ALERT' || s === 'PRE-ALERT') return 'var(--color-yellow)';
+        return 'var(--color-green)';
+    }
+
+    function colorForValue(v, thresholds) {
+        if (v === null || v === undefined || v === '--') return 'var(--text-primary)';
+        const n = Number(v);
+        if (n >= thresholds[0]) return 'var(--color-red)';
+        if (n >= thresholds[1]) return 'var(--color-yellow)';
+        return 'var(--color-green)';
+    }
+
+    function colorForAccel(v) {
+        if (v === null || v === undefined || v === '--') return 'var(--text-primary)';
+        const n = Number(v);
+        if (n > 0.3) return 'var(--color-red)';
+        if (n > 0) return 'var(--color-yellow)';
+        return 'var(--color-green)';
+    }
+
+    function setEl(id, text, color) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = text;
+        if (color) el.style.color = color;
+    }
+
+    // --- Load predictive status (top cards) ---
+    async function loadPredictiveStatus() {
+        const res = await apiCall('GET', '/predictive-status');
+        if (!res || !res.data) {
+            setEl('card-ttd', '--', 'var(--text-muted)');
+            setEl('card-ew', '--', 'var(--text-muted)');
+            setEl('card-col', '--', 'var(--text-muted)');
+            return;
+        }
+        const d = res.data;
+        const ews = d.early_warning || {};
+        const proj = d.projections || {};
+
+        const ttd = ews.days_to_collapse;
+        const ttdDisplay = (ttd !== null && ttd !== undefined) ? ttd : 'N/A';
+        setEl('card-ttd', ttdDisplay, colorForTTD(ttd));
+
+        const sig = ews.ew_signal || '--';
+        setEl('card-ew', sig, colorForEW(sig));
+
+        const col30 = (proj.projections && proj.projections['30']) ? proj.projections['30'].collapse_probability_pct : '--';
+        setEl('card-col', col30 !== '--' ? col30 + '%' : '--', colorForValue(col30, [50, 25]));
+
+        const acf = ews.autocorrelation;
+        setEl('card-acf', fmtNum(acf, 3), colorForValue(acf, [0.5, 0.3]));
+
+        const variance = ews.variance;
+        setEl('card-var', fmtNum(variance, 2), colorForValue(variance, [10, 4]));
+
+        const accel = ews.acceleration;
+        setEl('card-acc', fmtNum(accel, 3), colorForAccel(accel));
+    }
+
+    // --- Load predictive detail (charts, statistics, KPI inputs) ---
+    async function loadPredictiveDetail() {
+        const res = await apiCall('GET', '/predictive-detail');
+        if (!res) return;
+
+        const data = res.data || res;
+
+        // Build EWS rolling window chart
+        if (data.rolling_ews && data.rolling_ews.length > 0) {
+            buildEWSChart(data.rolling_ews);
+        }
+
+        // Build KPI input cards
+        if (data.kpi_inputs && data.kpi_inputs.length > 0) {
+            buildKPIInputs(data.kpi_inputs);
+        }
+
+        // Build statistics table
+        if (data.statistics) {
+            buildStatistics(data.statistics);
+        }
+    }
+
+    let ewsChart = null;
+    function buildEWSChart(rollingData) {
+        const ctx = document.getElementById('ewsChart');
+        if (!ctx) return;
+        if (ewsChart) ewsChart.destroy();
+
+        const labels = rollingData.map(r => {
+            const d = r.window_end || r.date || r.timestamp;
+            if (!d) return '';
+            try {
+                const dt = new Date(d);
+                return dt.toLocaleDateString('es-ES', { month: '2-digit', day: '2-digit' });
+            } catch (e) { return String(d).substring(0, 10); }
+        });
+
+        const acfData = rollingData.map(r => r.autocorrelation);
+        const varData = rollingData.map(r => r.variance);
+        const accData = rollingData.map(r => r.acceleration);
+        const scoreData = rollingData.map(r => r.ew_score);
+
+        ewsChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [
+                    {
+                        label: 'Autocorrelation',
+                        data: acfData,
+                        borderColor: '#58a6ff',
+                        backgroundColor: 'rgba(88,166,255,0.08)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        fill: false,
+                        yAxisID: 'y',
+                    },
+                    {
+                        label: 'Variance',
+                        data: varData,
+                        borderColor: '#d29922',
+                        backgroundColor: 'rgba(210,153,34,0.08)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        fill: false,
+                        yAxisID: 'y1',
+                    },
+                    {
+                        label: 'Acceleration',
+                        data: accData,
+                        borderColor: '#f85149',
+                        backgroundColor: 'rgba(248,81,73,0.08)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        fill: false,
+                        yAxisID: 'y2',
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: { color: '#8b919d', font: { size: 10, family: "'JetBrains Mono', monospace" }, usePointStyle: true, boxWidth: 8, padding: 16 }
+                    },
+                },
+                scales: {
+                    x: {
+                        ticks: { color: '#8b919d', font: { size: 9 }, maxTicksLimit: 10 },
+                        grid: { color: 'rgba(48,54,61,0.3)' },
+                    },
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        title: { display: true, text: 'Autocorrelation', color: '#58a6ff', font: { size: 9, family: "'JetBrains Mono', monospace" } },
+                        ticks: { color: '#58a6ff', font: { size: 9 } },
+                        grid: { color: 'rgba(48,54,61,0.25)' },
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        title: { display: true, text: 'Variance', color: '#d29922', font: { size: 9, family: "'JetBrains Mono', monospace" } },
+                        ticks: { color: '#d29922', font: { size: 9 } },
+                        grid: { drawOnChartArea: false },
+                    },
+                    y2: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        title: { display: true, text: 'Accel', color: '#f85149', font: { size: 9, family: "'JetBrains Mono', monospace" } },
+                        ticks: { color: '#f85149', font: { size: 9 } },
+                        grid: { drawOnChartArea: false },
+                    },
+                },
+            },
+        });
+    }
+
+    let forecastChart = null;
+    async function buildForecastChart() {
+        const res = await apiCall('GET', '/projections?days=180');
+        if (!res || !res.data) return;
+
+        const ctx = document.getElementById('forecastChart');
+        if (!ctx) return;
+        if (forecastChart) forecastChart.destroy();
+
+        const d = res.data;
+        const history = (d.history || []).map(r => ({
+            x: new Date(r.timestamp || r.date),
+            y: r.score !== undefined ? r.score : r.cri_score,
+        }));
+
+        const lastTs = history.length > 0 ? history[history.length - 1].x : new Date();
+        const futurePts = [];
+        if (d.projections) {
+            const entries = Object.entries(d.projections);
+            entries.sort((a, b) => parseInt(a[0]) - parseInt(b[0]));
+            for (const [days, p] of entries) {
+                const futTs = new Date(lastTs.getTime() + parseInt(days) * 86400000);
+                const projCri = p.projected_cri !== undefined ? p.projected_cri : p.cri;
+                const upper = (p.band && p.band.upper !== undefined) ? p.band.upper : null;
+                const lower = (p.band && p.band.lower !== undefined) ? p.band.lower : null;
+                futurePts.push({ x: futTs, y: projCri, upper, lower, collapse: p.collapse_probability_pct });
+            }
+        }
+
+        const upperData = futurePts.filter(p => p.upper !== null).map(p => ({ x: p.x, y: p.upper }));
+        const lowerData = futurePts.filter(p => p.lower !== null).map(p => ({ x: p.x, y: p.lower }));
+
+        const datasets = [
+            {
+                label: 'CRI Historical',
+                data: history,
+                borderColor: '#58a6ff',
+                borderWidth: 2,
+                tension: 0.2,
+                pointRadius: 0,
+                fill: false,
+            },
+        ];
+
+        if (futurePts.length > 0) {
+            datasets.push({
+                label: 'CRI Projected',
+                data: futurePts,
+                borderColor: '#58a6ff',
+                borderWidth: 2,
+                borderDash: [6, 3],
+                tension: 0.2,
+                pointRadius: 4,
+                pointBackgroundColor: '#f85149',
+                pointBorderColor: '#f85149',
+                fill: false,
+            });
+        }
+
+        if (upperData.length > 0) {
+            datasets.push({
+                label: 'Confidence Band',
+                data: upperData,
+                borderColor: 'transparent',
+                backgroundColor: 'rgba(88,166,255,0.1)',
+                pointRadius: 0,
+                tension: 0.2,
+                fill: '+1',
+            });
+            datasets.push({
+                label: 'Lower Bound',
+                data: lowerData,
+                borderColor: 'transparent',
+                pointRadius: 0,
+                tension: 0.2,
+                fill: false,
+            });
+        }
+
+        forecastChart = new Chart(ctx, {
+            type: 'line',
+            data: { datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: { color: '#8b919d', font: { size: 10, family: "'JetBrains Mono', monospace" }, usePointStyle: true, boxWidth: 8, padding: 16, filter: function(item) { return item.text !== 'Lower Bound'; } }
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            label: function(ctx) {
+                                const dsIdx = ctx.datasetIndex;
+                                const raw = ctx.raw;
+                                if (!raw) return '';
+                                const date = raw.x ? new Date(raw.x).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+                                const score = raw.y !== null && raw.y !== undefined ? raw.y.toFixed(2) : '--';
+                                if (dsIdx === 0) return 'Historical: CRI ' + score + ' | ' + date;
+                                if (dsIdx === 1) return 'Projected: CRI ' + score + ' | ' + date + (raw.collapse ? ' | Collapse: ' + raw.collapse + '%' : '');
+                                return '';
+                            }
+                        }
+                    },
+                    annotation: {
+                        annotations: {
+                            criticalLine: { type: 'line', yMin: 65, yMax: 65, borderColor: 'rgba(248,81,73,0.5)', borderWidth: 1, borderDash: [5,5], label: { display: true, content: 'CRITICAL (65)', position: 'end', backgroundColor: 'rgba(248,81,73,0.7)', color: '#fff', font: { size: 9 } } },
+                            moderateLine: { type: 'line', yMin: 30, yMax: 30, borderColor: 'rgba(63,185,80,0.5)', borderWidth: 1, borderDash: [5,5], label: { display: true, content: 'LOW (30)', position: 'end', backgroundColor: 'rgba(63,185,80,0.7)', color: '#fff', font: { size: 9 } } },
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: { unit: 'month', displayFormats: { month: 'MMM' } },
+                        ticks: { color: '#8b919d', font: { size: 9 } },
+                        grid: { color: 'rgba(48,54,61,0.3)' },
+                    },
+                    y: {
+                        min: 0, max: 100,
+                        ticks: { color: '#8b919d', font: { size: 9 } },
+                        grid: { color: 'rgba(48,54,61,0.3)' },
+                    },
+                },
+            },
+        });
+    }
+
+    function buildKPIInputs(inputs) {
+        const container = document.getElementById('kpi-input-list');
+        if (!container) return;
+
+        const colors = { 'GSPI': '#a2c9ff', 'SHPD': '#f85149', 'LTCR': '#3fb950', 'CFBR': '#d29922', 'UOR': '#c1c7d0' };
+        container.innerHTML = inputs.map(item => {
+            const name = item.name || item.kpi || '--';
+            const value = item.latest_value !== undefined ? fmtNum(item.latest_value, 2) : '--';
+            const source = item.source || item.data_source || '--';
+            const weight = item.weight !== undefined ? (Number(item.weight) * 100).toFixed(0) + '%' : '--';
+            const c = colors[name] || '#a2c9ff';
+            return '<div class="input-card">' +
+                '<span class="input-name" style="color:' + c + '">' + name + '</span>' +
+                '<span class="input-value" style="background:rgba(48,54,61,0.4);color:' + c + '">' + value + '</span>' +
+                '<span class="input-source">' + source + '</span>' +
+                '<span class="input-weight">' + weight + '</span>' +
+                '</div>';
+        }).join('');
+    }
+
+    function buildStatistics(stats) {
+        const rows = document.querySelectorAll('#stat-table .metric-value');
+        if (!rows.length) return;
+
+        const map = [
+            { key: 'mean', fmt: fmtNum },
+            { key: 'std_dev', fmt: (v) => fmtNum(v, 2) },
+            { key: 'min', fmt: fmtNum },
+            { key: 'max', fmt: fmtNum },
+            { key: 'trend_7d', fmt: (v) => v !== null && v !== undefined ? (Number(v) >= 0 ? '+' : '') + fmtNum(v, 2) + '%' : '--' },
+            { key: 'trend_30d', fmt: (v) => v !== null && v !== undefined ? (Number(v) >= 0 ? '+' : '') + fmtNum(v, 2) + '%' : '--' },
+            { key: null, fmt: () => {
+                const s = stats.date_range_start || stats.start_date;
+                const e = stats.date_range_end || stats.end_date;
+                if (s && e) {
+                    try { return new Date(s).toLocaleDateString('es-ES') + ' - ' + new Date(e).toLocaleDateString('es-ES'); }
+                    catch (ex) { return String(s).substring(0,10) + ' - ' + String(e).substring(0,10); }
+                }
+                return '--';
+            }},
+            { key: 'data_points', fmt: (v) => v !== undefined ? v : '--' },
+        ];
+
+        rows.forEach((td, i) => {
+            if (i < map.length) {
+                const m = map[i];
+                const val = m.key ? stats[m.key] : null;
+                td.textContent = m.fmt(m.key ? val : null);
+            }
+        });
+    }
+
+    function toggleExplain() {
+        const header = document.getElementById('explain-toggle');
+        const body = document.getElementById('explain-body');
+        header.classList.toggle('expanded');
+        body.classList.toggle('open');
+    }
+
+    async function refreshAll() {
+        const msg = document.getElementById('refresh-msg');
+        if (msg) msg.textContent = 'Refreshing...';
+        await Promise.all([
+            loadPredictiveStatus(),
+            loadPredictiveDetail(),
+            buildForecastChart(),
+        ]);
+        if (msg) msg.textContent = 'Data refreshes every 60s';
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        refreshAll();
+        setInterval(refreshAll, 60000);
+    });
+</script>
+
+</body>
+</html>
