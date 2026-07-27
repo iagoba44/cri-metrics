@@ -287,23 +287,50 @@ class HistoricalBackfill:
         WEIGHTS = {"GSPI": 0.25, "SHPD": 0.15, "LTCR": 0.20, "CFBR": 0.20, "UOR": 0.20}
         DEFAULT = 50.0
 
-        count = 0
-        current = self.start_date
+        all_kpi_records = {}
+        for kpi in KPIS:
+            records = (
+                self.db.query(TelemetryRecord)
+                .filter(TelemetryRecord.kpi_code == kpi, TelemetryRecord.timestamp >= self.start_date.replace(tzinfo=None),
+                        TelemetryRecord.timestamp <= (self.end_date + timedelta(days=1)).replace(tzinfo=None))
+                .order_by(TelemetryRecord.timestamp.asc())
+                .all()
+            )
+            all_kpi_records[kpi] = records
 
-        while current <= self.end_date:
+        count = 0
+        current = self.start_date.replace(tzinfo=None)
+        naive_end = self.end_date.replace(tzinfo=None)
+        last_known = {kpi: None for kpi in KPIS}
+        pointers = {kpi: 0 for kpi in KPIS}
+
+        while current <= naive_end:
             day_start = current.replace(hour=0, minute=0, second=0, microsecond=0)
             day_end = day_start + timedelta(days=1)
             current += timedelta(days=1)
 
             kpi_values = {}
             for kpi in KPIS:
-                latest = (
-                    self.db.query(TelemetryRecord)
-                    .filter(TelemetryRecord.kpi_code == kpi, TelemetryRecord.timestamp < day_end)
-                    .order_by(TelemetryRecord.timestamp.desc())
-                    .first()
-                )
-                val = float(latest.normalized_score) if latest and latest.normalized_score else DEFAULT
+                records = all_kpi_records[kpi]
+                p = pointers[kpi]
+                while p < len(records) and records[p].timestamp < day_end:
+                    p += 1
+                if p > pointers[kpi]:
+                    latest_in_window = records[p - 1]
+                    ns = latest_in_window.normalized_score
+                    if ns is not None:
+                        val = float(ns)
+                        last_known[kpi] = val
+                    elif last_known[kpi] is not None:
+                        val = last_known[kpi]
+                    else:
+                        val = DEFAULT
+                    pointers[kpi] = p
+                else:
+                    if last_known[kpi] is not None:
+                        val = last_known[kpi]
+                    else:
+                        val = DEFAULT
                 kpi_values[kpi] = min(100.0, max(0.0, val))
 
             cri_score = sum(kpi_values[k] * WEIGHTS[k] for k in KPIS)

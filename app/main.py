@@ -5,7 +5,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
-from app.api.v1 import router as api_v1_router
+from app.api.v1.routers.cri import router as router_cri
+from app.api.v1.routers.tmi import router as router_tmi
+from app.api.v1.routers.sources import router as router_sources
+from app.api.v1.routers.simulation import router as router_simulation
+from app.api.v1.routers.ai import router as router_ai
+from app.api.v1.routers.ingestion import router as router_ingestion
+from app.api.v1.routers.health import router as router_health
+from app.api.v1.routers.algorithmic import router as router_algorithmic
 from app.config import get_settings
 import logging
 
@@ -37,7 +44,16 @@ def _run_scheduled_ingestion():
 async def lifespan(app: FastAPI):
     # Startup
     Base.metadata.create_all(bind=engine)
-    
+
+    # Pre-cargar modelos pesados en thread separado (bloqueante)
+    import asyncio
+    from app.services.warmup import preload_models
+    loop = asyncio.get_running_loop()
+    preloaded_model = await loop.run_in_executor(None, preload_models)
+    if preloaded_model is not None:
+        from app.services.news_validator import set_preloaded_model
+        set_preloaded_model(preloaded_model)
+
     # Iniciar scheduler
     global _scheduler
     try:
@@ -48,10 +64,10 @@ async def lifespan(app: FastAPI):
         logging.info("[SCHEDULER] Ingesta automatica configurada cada 1h")
     except Exception as e:
         logging.warning(f"[SCHEDULER] No se pudo iniciar: {e}")
-    
+
     logging.info("CRI Metrics System iniciado - Dashboard en /static/index.html")
     yield
-    
+
     # Shutdown
     if _scheduler:
         _scheduler.shutdown()
@@ -74,7 +90,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(api_v1_router)
+app.include_router(router_cri, prefix="/api/v1")
+app.include_router(router_tmi, prefix="/api/v1")
+app.include_router(router_sources, prefix="/api/v1")
+app.include_router(router_simulation, prefix="/api/v1")
+app.include_router(router_ai, prefix="/api/v1")
+app.include_router(router_ingestion, prefix="/api/v1")
+app.include_router(router_health, prefix="/api/v1")
+app.include_router(router_algorithmic, prefix="/api/v1")
 
 # Servir archivos estaticos (dashboard)
 app.mount("/static", StaticFiles(directory="static"), name="static")

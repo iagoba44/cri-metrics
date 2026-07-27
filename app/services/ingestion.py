@@ -1,4 +1,5 @@
 """Pipeline de ingesta de datos desde fuentes externas."""
+import asyncio
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import List, Dict
@@ -152,6 +153,120 @@ class IngestionPipeline:
         for r in all_records:
             r.pop('_source_name', None)
         
+        total = self.ingest_batch(all_records)
+        logger.info(f"Total ingestado tras deduplicacion/validacion: {total} registros")
+        return total
+
+    async def run_ingestion_async(self, use_real_sources: bool = True):
+        """Version asincrona de run_scheduled_ingestion usando asyncio.gather y httpx.
+
+        Las fuentes con fetch() sincrono se ejecutan via asyncio.to_thread en paralelo.
+        """
+        import httpx
+
+        if use_real_sources:
+            from app.external.vast_ai_live import VastAIClient
+            from app.external.coingecko import CoinGeckoClient
+            from app.external.whattomine import WhatToMineScraper
+            from app.external.yahoo_finance import YahooFinanceClient
+            from app.external.binance import BinanceClient
+            from app.external.lambdalabs import LambdaLabsScraper
+            from app.external.fred_macro import FREDClient
+            from app.external.nicehash import NiceHashClient
+            from app.external.huggingface import HuggingFaceClient
+            from app.external.defillama import DeFiLlamaClient
+            sources = [
+                VastAIClient(),
+                CoinGeckoClient(),
+                WhatToMineScraper(),
+                YahooFinanceClient(),
+                BinanceClient(),
+                LambdaLabsScraper(),
+                FREDClient(),
+                NiceHashClient(),
+                HuggingFaceClient(),
+                DeFiLlamaClient(),
+            ]
+        else:
+            from app.external.sec_edgar import SECDataSource
+            from app.external.neoclouds import NeocloudDataSource
+            from app.external.scrapers import B2BScraperDataSource
+            sources = [
+                SECDataSource(),
+                NeocloudDataSource(),
+                B2BScraperDataSource(),
+            ]
+
+        async def fetch_source(source, client):
+            source_name = source.__class__.__name__
+            try:
+                data = await asyncio.to_thread(source.fetch)
+                for rec in data:
+                    rec['_source_name'] = source_name
+                logger.info(f"Fuente {source_name}: {len(data)} registros")
+                return data
+            except Exception as e:
+                logger.error(f"Fallo en fuente {source_name}: {e}")
+                return []
+
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+            tasks = [fetch_source(src, client) for src in sources]
+            results = await asyncio.gather(*tasks)
+
+        all_records = []
+        for batch in results:
+            all_records.extend(batch)
+
+        from collections import defaultdict
+        kpi_groups = defaultdict(list)
+        for r in all_records:
+            kpi_groups[r["kpi_code"]].append(r)
+
+        deduped_records = []
+        for kpi, records in kpi_groups.items():
+            if len(records) == 1:
+                deduped_records.extend(records)
+                continue
+
+            weighted_avg, used_sources, total_weight = compute_weighted_average(records)
+
+            values = [r["raw_value"] for r in records]
+            simple_avg = sum(values) / len(values)
+            std_dev = (sum((v - simple_avg) ** 2 for v in values) / len(values)) ** 0.5
+
+            logger.info(f"[CROSS-VALIDATION] {kpi} de {len(records)} fuentes: "
+                        f"valores={[round(v, 2) for v in values]}, "
+                        f"ponderado={weighted_avg:.2f}, peso_total={total_weight}, "
+                        f"std_dev={std_dev:.2f}, fuentes={used_sources}")
+
+            if std_dev > 30:
+                logger.warning(f"[ALTA_VARIABILIDAD] {kpi}: std_dev={std_dev:.2f} entre fuentes. "
+                               f"Fuentes: {[r['data_source'] for r in records]}")
+
+            if not has_enough_confidence(kpi, len(used_sources), total_weight):
+                logger.warning(f"[CONFIANZA_BAJA] {kpi}: {len(used_sources)} fuentes, peso={total_weight}. "
+                               f"Umbral no alcanzado. Resultado puede ser poco fiable.")
+
+            deduped_records.append({
+                "kpi_code": kpi,
+                "raw_value": weighted_avg,
+                "timestamp": datetime.now(timezone.utc),
+                "data_source": f"WEIGHTED({','.join(used_sources)};w={total_weight})",
+            })
+
+        all_records = deduped_records
+
+        gspi_rec = next((r for r in all_records if r.get("kpi_code") == "GSPI"), None)
+        shpd_rec = next((r for r in all_records if r.get("kpi_code") == "SHPD"), None)
+        if gspi_rec and shpd_rec:
+            divergence = abs(gspi_rec["raw_value"] - shpd_rec["raw_value"])
+            if divergence > 50:
+                logger.warning(f"[DISCREPANCIA] GSPI={gspi_rec['raw_value']:.2f} vs SHPD={shpd_rec['raw_value']:.2f} "
+                               f"(diferencia={divergence:.2f}). Mercado spot vs cloud diverge fuertemente.")
+
+        for r in all_records:
+            r.pop('_source_name', None)
+
         total = self.ingest_batch(all_records)
         logger.info(f"Total ingestado tras deduplicacion/validacion: {total} registros")
         return total

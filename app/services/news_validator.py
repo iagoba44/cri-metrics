@@ -28,6 +28,16 @@ CONTROL_PHRASES = [
     "rising AI token prices",
 ]
 
+_preloaded_model: Optional[SentenceTransformer] = None
+
+
+def set_preloaded_model(model: SentenceTransformer) -> None:
+    """Registra un modelo pre-cargado desde el lifespan (evita re-carga)."""
+    global _preloaded_model
+    _preloaded_model = model
+    logger.info("[NewsValidator] Modelo pre-cargado registrado desde lifespan")
+
+
 class NewsValidator:
     """
     Valida noticias mediante similitud coseno contra frases de control.
@@ -43,8 +53,12 @@ class NewsValidator:
 
     def _load_model(self):
         if NewsValidator._model is None:
-            logger.info("[NewsValidator] Cargando modelo all-MiniLM-L6-v2...")
-            NewsValidator._model = SentenceTransformer("all-MiniLM-L6-v2")
+            if _preloaded_model is not None:
+                logger.info("[NewsValidator] Usando modelo pre-cargado desde lifespan")
+                NewsValidator._model = _preloaded_model
+            else:
+                logger.info("[NewsValidator] Cargando modelo all-MiniLM-L6-v2...")
+                NewsValidator._model = SentenceTransformer("all-MiniLM-L6-v2")
             NewsValidator._control_embeddings = NewsValidator._model.encode(CONTROL_PHRASES, convert_to_numpy=True)
             logger.info("[NewsValidator] Modelo cargado.")
         self.model = NewsValidator._model

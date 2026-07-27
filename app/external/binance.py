@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Optional
 import requests
 import logging
+from app.services.cache import cached
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,7 @@ class BinanceClient:
             logger.error(f"Error computing GPU demand proxy: {e}")
             return None
 
+    @cached(ttl=60)
     def fetch(self) -> List[Dict]:
         """Pipeline de ingesta: retorna registros para CFBR."""
         records = []

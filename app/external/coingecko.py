@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Optional
 import requests
 import logging
+from app.services.cache import cached
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,7 @@ class CoinGeckoClient:
             logger.error(f"Error computing CFBR proxy: {e}")
             return None
 
+    @cached(ttl=120)
     def fetch(self) -> List[Dict]:
         """Pipeline de ingesta: retorna registros para CFBR."""
         records = []

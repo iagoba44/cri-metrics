@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Optional, List, Dict
 import requests
 import logging
+from app.services.cache import cached
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ class CoinGeckoAIClient:
             logger.error(f"Error fetching AI tokens: {e}")
             return None
 
+    @cached(ttl=120)
     def compute_tmi_component(self) -> Optional[float]:
         """
         Componente TMI: performance promedio de AI tokens.

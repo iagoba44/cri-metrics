@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3"></script>
 <style>
         :root {
             --grid-color: rgba(162, 201, 255, 0.05);
@@ -105,6 +106,8 @@
             opacity: 0;
             transition: opacity 0.15s ease;
         }
+        .range-btn { background: rgba(48,54,61,0.6); color: #8b919d; border: 1px solid rgba(48,54,61,0.8); border-radius: 4px; padding: 2px 10px; cursor: pointer; font-size: 11px; margin-right: 4px; }
+        .range-btn.active { background: #58a6ff; color: #0d1117; border-color: #58a6ff; }
     </style>
 <script id="tailwind-config">
         tailwind.config = {
@@ -286,10 +289,10 @@
 <!-- Live Status Sub-Header -->
 <div class="bg-success-glow/10 border-b border-success-glow/20 py-2 px-10 flex items-center gap-3">
 <div class="w-2 h-2 rounded-full bg-success-glow animate-pulse-live"></div>
-<span class="font-label-caps text-label-caps text-success-glow tracking-widest">● LIVE MODE: 12 Active APIs</span>
+<span class="font-label-caps text-label-caps text-success-glow tracking-widest" id="status-mode">● LIVE MODE: 12 Active APIs</span>
 <div class="ml-auto flex items-center gap-4 text-on-surface-variant/60 font-metric-sm text-[10px]">
-<span>LATENCY: 42ms</span>
-<span>REGION: AWS-US-EAST-1</span>
+<span id="status-latency">LATENCY: 42ms</span>
+<span id="status-region">REGION: AWS-US-EAST-1</span>
 </div>
 </div>
 <div class="p-10 space-y-gutter">
@@ -664,9 +667,36 @@
             <div class="mt-3 text-on-surface-variant font-body-md text-[12px]" id="pred-summary">--</div>
         </div>
 
+        <!-- Alert Log + Heatmap + Source Metrics Row -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-gutter">
+            <div class="glass-panel p-6 rounded-xl" style="grid-area: alert-log;">
+                <h3 class="font-headline-sm text-headline-sm text-on-surface mb-4">Alert Log</h3>
+                <div id="alert-log-list" style="max-height: 200px; overflow-y: auto; font-size: 11px;">
+                    <div style="color: #8b919d; padding: 8px;">Cargando...</div>
+                </div>
+            </div>
+            <div class="glass-panel p-6 rounded-xl" style="grid-area: heatmap;">
+                <h3 class="font-headline-sm text-headline-sm text-on-surface mb-4">KPI Correlations (90d)</h3>
+                <canvas id="heatmapChart" style="max-height: 200px;"></canvas>
+            </div>
+            <div class="glass-panel p-6 rounded-xl">
+                <h3 class="font-headline-sm text-headline-sm text-on-surface mb-4">Source Health</h3>
+                <div id="source-metrics-list" style="max-height: 200px; overflow-y: auto; font-size: 11px;">
+                    <div style="color: #8b919d; padding: 8px;">Cargando...</div>
+                </div>
+            </div>
+        </div>
+
         <!-- 6-Month Historical + Projection Chart -->
         <div class="glass-panel p-6 rounded-xl">
-            <h3 class="font-headline-sm text-headline-sm text-on-surface mb-6">CRI 6-Month Trend + Projection</h3>
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="font-headline-sm text-headline-sm text-on-surface">CRI Trend + Projection</h3>
+                <div id="range-selector">
+                    <button class="range-btn" data-days="30" onclick="setProjectionRange(30, this)">1M</button>
+                    <button class="range-btn" data-days="90" onclick="setProjectionRange(90, this)">3M</button>
+                    <button class="range-btn active" data-days="180" onclick="setProjectionRange(180, this)">6M</button>
+                </div>
+            </div>
             <div class="bg-surface-container-low p-4 rounded-lg border border-outline-variant" style="height:300px;">
                 <canvas id="projectionChart"></canvas>
             </div>
@@ -1014,6 +1044,9 @@
         updateConsensusDiff();
         updateAlgorithmicStatus();
         updatePredictiveStatus();
+        updateAlertLog();
+        updateHeatmap();
+        updateSourceMetrics();
 
         logToTerminal('SYSTEM: Dashboard synchronized with live market data', 'system');
     }
@@ -1291,6 +1324,14 @@
 
     // --- Predictive Panel ---
     let projectionChart;
+    let currentProjectionDays = 180;
+
+    function setProjectionRange(days, btn) {
+        currentProjectionDays = days;
+        document.querySelectorAll('#range-selector .range-btn').forEach(b => b.classList.remove('active'));
+        if (btn) btn.classList.add('active');
+        updateProjectionChart();
+    }
 
     async function updatePredictiveStatus() {
         const result = await apiCall('GET', '/predictive-status');
@@ -1330,7 +1371,7 @@
     }
 
     async function updateProjectionChart() {
-        const proj = await apiCall('GET', '/projections');
+        const proj = await apiCall('GET', '/projections?days=' + currentProjectionDays);
         if (!proj || !proj.data || !proj.data.history) return;
 
         const d = proj.data;
@@ -1340,15 +1381,17 @@
         if (!ctx) return;
         if (projectionChart) projectionChart.destroy();
 
-        // Proyecciones
         const lastTs = history[history.length - 1]?.x || new Date();
         const futurePts = [];
         if (d.projections) {
             for (const [days, p] of Object.entries(d.projections)) {
                 const futTs = new Date(lastTs.getTime() + parseInt(days) * 86400000);
-                futurePts.push({ x: futTs, y: p.projected_cri, upper: p.band.upper, lower: p.band.lower });
+                futurePts.push({ x: futTs, y: p.projected_cri, upper: p.band.upper, lower: p.band.lower, collapse: p.collapse_probability_pct, days: parseInt(days) });
             }
         }
+
+        const upperData = futurePts.map(p => ({ x: p.x, y: p.upper }));
+        const lowerData = futurePts.map(p => ({ x: p.x, y: p.lower }));
 
         projectionChart = new Chart(ctx, {
             type: 'line',
@@ -1362,6 +1405,7 @@
                         tension: 0.2,
                         pointRadius: 0,
                         segment: { borderColor: '#58a6ff' },
+                        fill: false,
                     },
                     {
                         label: 'CRI Projected',
@@ -1372,13 +1416,68 @@
                         tension: 0.2,
                         pointRadius: 4,
                         pointBackgroundColor: '#f85149',
+                        fill: false,
+                    },
+                    {
+                        label: 'Confidence Band',
+                        data: upperData,
+                        borderColor: 'transparent',
+                        backgroundColor: 'rgba(88,166,255,0.1)',
+                        pointRadius: 0,
+                        tension: 0.2,
+                        fill: '+1',
+                    },
+                    {
+                        label: 'Lower Bound',
+                        data: lowerData,
+                        borderColor: 'transparent',
+                        pointRadius: 0,
+                        tension: 0.2,
+                        fill: false,
                     },
                 ],
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: { legend: { display: true, labels: { color: '#dae3ee', font: { size: 10 } } } },
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: true, labels: { color: '#dae3ee', font: { size: 10 } } },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            label: function(ctx) {
+                                const dsIdx = ctx.datasetIndex;
+                                const raw = ctx.raw;
+                                const date = raw.x ? new Date(raw.x).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+                                if (dsIdx === 0) {
+                                    const score = raw.y.toFixed(2);
+                                    let zone = 'LOW';
+                                    if (raw.y >= 65) zone = 'CRITICAL';
+                                    else if (raw.y >= 30) zone = 'MODERATE';
+                                    const prevIdx = ctx.dataIndex > 0 ? ctx.dataIndex - 1 : -1;
+                                    const delta = prevIdx >= 0 && ctx.dataset.data[prevIdx] ? (raw.y - ctx.dataset.data[prevIdx].y).toFixed(2) : '--';
+                                    return `Date: ${date} | CRI: ${score} | Zone: ${zone} | Δ: ${delta}`;
+                                }
+                                if (dsIdx === 1) {
+                                    const score = raw.y.toFixed(2);
+                                    let zone = 'LOW';
+                                    if (raw.y >= 65) zone = 'CRITICAL';
+                                    else if (raw.y >= 30) zone = 'MODERATE';
+                                    return `Date: ${date} | CRI: ${score} | Zone: ${zone} (Projected) | Collapse: ${raw.collapse ? raw.collapse + '%' : '--'}`;
+                                }
+                                return '';
+                            }
+                        }
+                    },
+                    annotation: {
+                        annotations: {
+                            criticalLine: { type: 'line', yMin: 65, yMax: 65, borderColor: 'rgba(248,81,73,0.6)', borderWidth: 1, borderDash: [5,5], label: { display: true, content: 'CRITICAL (65)', position: 'end', backgroundColor: 'rgba(248,81,73,0.8)', color: '#fff', font: { size: 10 } } },
+                            moderateLine: { type: 'line', yMin: 30, yMax: 30, borderColor: 'rgba(63,185,80,0.6)', borderWidth: 1, borderDash: [5,5], label: { display: true, content: 'LOW (30)', position: 'end', backgroundColor: 'rgba(63,185,80,0.8)', color: '#fff', font: { size: 10 } } },
+                        }
+                    }
+                },
                 scales: {
                     x: {
                         type: 'time',
@@ -1465,12 +1564,109 @@
         }
     }
 
+    async function updateAlertLog() {
+        const result = await apiCall('GET', '/alert-log');
+        if (!result || !result.alerts) return;
+        const container = document.getElementById('alert-log-list');
+        if (result.alerts.length === 0) {
+            container.innerHTML = '<div style="color:#3fb950;padding:8px;">Sin alertas criticas</div>';
+            return;
+        }
+        container.innerHTML = result.alerts.map(a => {
+            const d = new Date(a.timestamp);
+            const time = d.toLocaleString();
+            return '<div style="padding: 3px 8px; border-bottom: 1px solid rgba(48,54,61,0.3); color: #f85149;">' +
+                time + ' — CRI: ' + a.cri_score.toFixed(1) + ' (' + a.zone + ')</div>';
+        }).join('');
+    }
+
+    async function updateHeatmap() {
+        const result = await apiCall('GET', '/correlations');
+        if (!result || !result.correlations) return;
+        const ctx = document.getElementById('heatmapChart');
+        if (!ctx) return;
+
+        if (window.heatmapChart) window.heatmapChart.destroy();
+
+        const kpis = result.kpis;
+        const data = [];
+        const bgColors = [];
+        for (let i = 0; i < kpis.length; i++) {
+            for (let j = 0; j < kpis.length; j++) {
+                if (j <= i) {
+                    const c = result.correlations.find(x => x.kpi1 === kpis[i] && x.kpi2 === kpis[j]);
+                    const val = c ? c.correlation : 0;
+                    data.push({ x: kpis[i] + '/' + kpis[j], y: val });
+                    const r = val > 0 ? Math.round(255 * val) : 0;
+                    const g = val < 0 ? Math.round(255 * Math.abs(val)) : 0;
+                    bgColors.push('rgba(' + r + ',' + g + ',100,0.7)');
+                }
+            }
+        }
+
+        window.heatmapChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: data.map(d => d.x),
+                datasets: [{
+                    label: 'Correlation',
+                    data: data.map(d => d.y),
+                    backgroundColor: bgColors,
+                    borderColor: bgColors,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y',
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { min: -1, max: 1, ticks: { color: '#8b919d', font: { size: 9 } } },
+                    y: { ticks: { color: '#8b919d', font: { size: 10 } } },
+                }
+            }
+        });
+    }
+
+    async function updateSourceMetrics() {
+        const result = await apiCall('GET', '/source-metrics');
+        if (!result || !result.metrics) return;
+        const container = document.getElementById('source-metrics-list');
+        const top5 = result.metrics.slice(0, 5);
+        container.innerHTML = top5.map(m => {
+            const color = m.status === 'ACTIVE' ? '#3fb950' : m.status === 'STALE' ? '#d29922' : '#f85149';
+            const age = m.age_seconds < 60 ? Math.round(m.age_seconds) + 's' :
+                m.age_seconds < 3600 ? Math.round(m.age_seconds / 60) + 'm' :
+                Math.round(m.age_seconds / 3600) + 'h';
+            return '<div style="padding: 4px 8px; border-bottom: 1px solid rgba(48,54,61,0.3); display:flex;justify-content:space-between;">' +
+                '<span style="color:#dae3ee;">' + (m.source.length > 16 ? m.source.substring(0, 15) + '…' : m.source) + '</span>' +
+                '<span style="color:' + color + ';">' + m.status + ' (' + age + ')</span></div>';
+        }).join('');
+    }
+
+    function initSSE() {
+        try {
+            const evtSource = new EventSource(API_BASE + '/events');
+            evtSource.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    document.getElementById('status-mode').innerText = data.zone;
+                    document.getElementById('status-latency').innerText = 'LIVE';
+                    document.getElementById('status-region').innerText =
+                        new Date(data.timestamp).toLocaleTimeString();
+                } catch(e) {}
+            };
+            evtSource.onerror = function() { /* silent fail, polling still works */ };
+        } catch(e) {}
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         logToTerminal('SYSTEM: Boot sequence initiated...', 'system');
         initDonut();
         initTrendChart();
         initHistoryCharts();
         loadScenarios();
+        initSSE();
         // Load real data after short delay
         setTimeout(loadRealData, 800);
         // Auto-refresh every 30s
