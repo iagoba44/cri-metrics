@@ -1,9 +1,11 @@
+import asyncio
 import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import RiskIndex, TMISnapshot, TelemetryRecord
 from app.scenarios import get_mode_state
+from app.config import get_settings
 from app.services.algorithmic_enhancements import get_zscore, get_decay_weights
 from app.services.tmi_calculator import TMICalculator
 from datetime import datetime, timedelta, timezone
@@ -157,8 +159,8 @@ async def get_gemini_analysis(custom_prompt: str = "", db: Session = Depends(get
 
 
 @router.get("/ai-data-feed")
-def get_ai_data_feed(db: Session = Depends(get_db)):
-    """Muestra exactamente que datos y prompt se envian a los LLMs (Gemini + Consensus)."""
+async def get_ai_data_feed(db: Session = Depends(get_db)):
+    """Muestra el prompt, la respuesta de Gemini, y el data lineage completo."""
     from app.models import RiskIndex, TMISnapshot, TelemetryRecord
     from app.services.algorithmic_enhancements import get_zscore, get_decay_weights
     from datetime import datetime, timedelta, timezone
@@ -196,7 +198,7 @@ def get_ai_data_feed(db: Session = Depends(get_db)):
                      "UOR": "% infrautilizacion"}[kpi_code],
         }
     
-    # CRI historico 30d para contexto
+    # CRI historico 30d
     cutoff_30d = datetime.now(timezone.utc) - timedelta(days=30)
     cri_30d = (
         db.query(RiskIndex)
@@ -212,7 +214,7 @@ def get_ai_data_feed(db: Session = Depends(get_db)):
         if kpi["source"] and kpi["source"] != "N/A":
             active_sources.add(kpi["source"])
     
-    # Construir el prompt que se enviaria a Gemini
+    # Prompt para Gemini
     gemini_prompt = f"""**CONTEXTO DE MERCADO IA - INFRAESTRUCTURA**
 
 **Composite Risk Index (CRI):** {float(latest_cri.cri_score) if latest_cri else 'N/A'}/100 [{latest_cri.risk_zone if latest_cri else 'UNKNOWN'}]
@@ -237,13 +239,27 @@ Genera un reporte ejecutivo con:
 5. Nivel de confianza del analisis (BAJO/MEDIO/ALTO)
 """
     
-    # Consensus diff prompt (mas breve)
-    consensus_prompt = f"""Evalua el riesgo del mercado de infraestructura IA (0-100):
-- CRI algoritmico: {float(latest_cri.cri_score) if latest_cri else 'N/A'}
-- TMI: {float(latest_tmi.tmi_score) if latest_tmi else 'N/A'}
-- KPIs: {', '.join([f'{k}={v["current_value"]}' for k,v in kpis.items() if v["current_value"] is not None])}
-Responde solo con un numero (0-100)."""
-
+    # Llamar a Gemini
+    gemini_response = None
+    gemini_error = None
+    try:
+        import google.generativeai as genai
+        settings = get_settings()
+        if settings.GEMINI_API_KEY:
+            genai.configure(api_key=settings.GEMINI_API_KEY)
+            model = genai.GenerativeModel("gemini-2.5-flash")
+            loop = asyncio.get_running_loop()
+            resp = await loop.run_in_executor(
+                None,
+                lambda: model.generate_content(gemini_prompt)
+            )
+            gemini_response = resp.text if resp else None
+        else:
+            gemini_error = "GEMINI_API_KEY no configurada"
+    except Exception as e:
+        gemini_error = str(e)
+        logger.warning(f"[AI-Data-Feed] Gemini error: {e}")
+    
     return {
         "status": "success",
         "data": {
@@ -259,8 +275,9 @@ Responde solo con un numero (0-100)."""
             },
             "prompts": {
                 "gemini_full": gemini_prompt,
-                "consensus_short": consensus_prompt,
             },
+            "gemini_response": gemini_response,
+            "gemini_error": gemini_error,
             "data_lineage": {
                 "description": "Cada KPI se obtiene de fuentes externas, se normaliza (0-100), y se pondera para calcular el CRI.",
                 "sources_accessed": sorted(active_sources),

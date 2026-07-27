@@ -304,9 +304,18 @@
     <!-- Row 3.5: AI Data Feed -->
     <h3 class="section-title" style="margin-top: 24px;">AI Data Feed &amp; Lineage</h3>
     <div class="two-col" id="ai-data-feed-container">
+        <div class="glass-panel" style="grid-column: 1 / -1;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <h4 style="font-size:13px;margin:0;color:#8b919d;">Respuesta de Gemini 2.5 Flash</h4>
+                <span id="gemini-status" style="font-size:10px;color:#d29922;">consultando...</span>
+            </div>
+            <div id="gemini-response-display" style="background:rgba(0,0,0,0.3);padding:16px;border-radius:6px;font-size:12px;max-height:300px;overflow-y:auto;color:#dae3ee;border:1px solid #30363d;line-height:1.6;">
+                <div style="color:#8b919d;">Consultando a Gemini 2.5 Flash...</div>
+            </div>
+        </div>
         <div class="glass-panel">
-            <h4 style="font-size:13px;margin:0 0 12px;color:#8b919d;">Prompt enviado a Gemini 2.5 Flash</h4>
-            <pre id="gemini-prompt-display" style="background:rgba(0,0,0,0.3);padding:12px;border-radius:6px;font-size:11px;max-height:260px;overflow-y:auto;white-space:pre-wrap;color:#dae3ee;font-family:'JetBrains Mono',monospace;border:1px solid #30363d;">Cargando...</pre>
+            <h4 style="font-size:13px;margin:0 0 8px;color:#8b919d;" onclick="document.getElementById('prompt-section').classList.toggle('hidden')" style="cursor:pointer;">Prompt enviado ▾</h4>
+            <pre id="gemini-prompt-display" style="background:rgba(0,0,0,0.3);padding:12px;border-radius:6px;font-size:10px;max-height:200px;overflow-y:auto;white-space:pre-wrap;color:#8b919d;font-family:'JetBrains Mono',monospace;border:1px solid #30363d;">Cargando...</pre>
         </div>
         <div class="glass-panel">
             <h4 style="font-size:13px;margin:0 0 12px;color:#8b919d;">Data Lineage (trazabilidad de datos)</h4>
@@ -768,6 +777,21 @@
             if (!json || !json.data) return;
             
             const d = json.data;
+            
+            // Gemini response
+            const respEl = document.getElementById('gemini-response-display');
+            const statusEl = document.getElementById('gemini-status');
+            if (respEl) {
+                if (d.gemini_response) {
+                    respEl.innerHTML = '<pre style="white-space:pre-wrap;font-family:inherit;margin:0;">' + d.gemini_response + '</pre>';
+                    if (statusEl) { statusEl.textContent = 'OK'; statusEl.style.color = '#3fb950'; }
+                } else if (d.gemini_error) {
+                    respEl.innerHTML = '<div style="color:#f85149;">Error: ' + d.gemini_error + '</div>';
+                    if (statusEl) { statusEl.textContent = 'ERROR'; statusEl.style.color = '#f85149'; }
+                } else {
+                    respEl.innerHTML = '<div style="color:#8b919d;">Sin respuesta</div>';
+                }
+            }
             
             // Update prompt display
             const promptEl = document.getElementById('gemini-prompt-display');
