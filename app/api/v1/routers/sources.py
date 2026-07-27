@@ -212,7 +212,7 @@ def get_kpi_explanations():
 def get_kpi_correlations(db: Session = Depends(get_db)):
     """Matriz de correlacion entre KPIs usando los ultimos 90 dias."""
     kpis = ["GSPI", "SHPD", "LTCR", "CFBR", "UOR"]
-    cutoff = datetime.now(timezone.utc) - timedelta(days=90)
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=90)).replace(tzinfo=None)
 
     records = {}
     for kpi in kpis:
@@ -232,7 +232,14 @@ def get_kpi_correlations(db: Session = Depends(get_db)):
     days = sorted(set().union(*[r.keys() for r in records.values()]))
     matrix = []
     for day in days:
-        matrix.append([records[k].get(day) for k in kpis])
+        row = []
+        for k in kpis:
+            v = records[k].get(day)
+            row.append(float(v) if v is not None else np.nan)
+        matrix.append(row)
+
+    if not matrix:
+        return {"status": "success", "kpis": kpis, "correlations": []}
 
     corr_data = np.array(matrix).T
     corr_matrix = []
