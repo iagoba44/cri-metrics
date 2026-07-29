@@ -5,14 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
-from app.api.v1.routers.cri import router as router_cri
-from app.api.v1.routers.tmi import router as router_tmi
-from app.api.v1.routers.sources import router as router_sources
-from app.api.v1.routers.simulation import router as router_simulation
-from app.api.v1.routers.ai import router as router_ai
-from app.api.v1.routers.ingestion import router as router_ingestion
-from app.api.v1.routers.health import router as router_health
-from app.api.v1.routers.algorithmic import router as router_algorithmic
+from app.api.v1.routers import combined_router
 from app.config import get_settings
 import logging
 
@@ -54,16 +47,19 @@ async def lifespan(app: FastAPI):
         from app.services.news_validator import set_preloaded_model
         set_preloaded_model(preloaded_model)
 
-    # Iniciar scheduler
+    # Iniciar scheduler sólo si no estamos en producción con PostgreSQL (donde Celery se encarga)
     global _scheduler
-    try:
-        from apscheduler.schedulers.background import BackgroundScheduler
-        _scheduler = BackgroundScheduler()
-        _scheduler.add_job(_run_scheduled_ingestion, 'interval', hours=1, id='ingestion_hourly', replace_existing=True)
-        _scheduler.start()
-        logging.info("[SCHEDULER] Ingesta automatica configurada cada 1h")
-    except Exception as e:
-        logging.warning(f"[SCHEDULER] No se pudo iniciar: {e}")
+    if get_settings().DB_ENGINE != "postgres":
+        try:
+            from apscheduler.schedulers.background import BackgroundScheduler
+            _scheduler = BackgroundScheduler()
+            _scheduler.add_job(_run_scheduled_ingestion, 'interval', hours=1, id='ingestion_hourly', replace_existing=True)
+            _scheduler.start()
+            logging.info("[SCHEDULER] Ingesta automática local configurada cada 1h (SQLite)")
+        except Exception as e:
+            logging.warning(f"[SCHEDULER] No se pudo iniciar: {e}")
+    else:
+        logging.info("[SCHEDULER] Modo producción (PostgreSQL) activo. Celery Beat gestionará las tareas periódicas.")
 
     logging.info("CRI Metrics System iniciado - Dashboard en /static/index.html")
     yield
@@ -90,14 +86,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(router_cri, prefix="/api/v1")
-app.include_router(router_tmi, prefix="/api/v1")
-app.include_router(router_sources, prefix="/api/v1")
-app.include_router(router_simulation, prefix="/api/v1")
-app.include_router(router_ai, prefix="/api/v1")
-app.include_router(router_ingestion, prefix="/api/v1")
-app.include_router(router_health, prefix="/api/v1")
-app.include_router(router_algorithmic, prefix="/api/v1")
+app.include_router(combined_router)
 
 # Servir archivos estaticos (dashboard)
 app.mount("/static", StaticFiles(directory="static"), name="static")

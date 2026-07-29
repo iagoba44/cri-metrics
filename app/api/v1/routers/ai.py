@@ -511,3 +511,248 @@ Formato: Texto claro, profesional, sin markdown. Usa los datos numericos como ev
             },
         },
     }
+
+
+@router.get("/download-report")
+async def download_report(db: Session = Depends(get_db)):
+    """Genera y descarga un reporte ejecutivo HTML/PDF."""
+    from fastapi.responses import HTMLResponse
+    
+    feed = await get_ai_data_feed(db)
+    if feed["status"] != "success":
+        raise HTTPException(status_code=500, detail="Error recopilando métricas")
+        
+    data = feed["data"]
+    gemini_resp = data.get("gemini_response") or "El análisis de Gemini no está disponible. Verifique su API key."
+    snapshot = data["snapshot"]
+    
+    # Formatear la respuesta de Gemini en párrafos legibles
+    gemini_html = gemini_resp.replace("\n", "<br>")
+    
+    html_content = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Reporte Ejecutivo de Salud del Mercado CRI</title>
+    <style>
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #2d3748;
+            background-color: #f7fafc;
+            margin: 0;
+            padding: 40px;
+        }}
+        .container {{
+            max-width: 850px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            border: 1px solid #e2e8f0;
+        }}
+        .header {{
+            border-bottom: 3px solid #3182ce;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }}
+        .logo {{
+            font-size: 22px;
+            font-weight: 800;
+            color: #2b6cb0;
+            letter-spacing: 0.05em;
+        }}
+        .date {{
+            font-size: 13px;
+            color: #718096;
+            font-weight: 600;
+        }}
+        h1 {{
+            font-size: 28px;
+            color: #1a202c;
+            margin-top: 0;
+        }}
+        h2 {{
+            font-size: 18px;
+            color: #2b6cb0;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 8px;
+            margin-top: 30px;
+        }}
+        .overview-grid {{
+            display: grid;
+            grid-template-cols: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }}
+        .metric-card {{
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-top: 4px solid #3182ce;
+            padding: 20px;
+            border-radius: 4px;
+            text-align: center;
+        }}
+        .metric-card.critical {{
+            border-top: 4px solid #e53e3e;
+            background: #fff5f5;
+        }}
+        .metric-card.success {{
+            border-top: 4px solid #48bb78;
+            background: #f0fff4;
+        }}
+        .metric-title {{
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #718096;
+            margin-bottom: 8px;
+            font-weight: 700;
+        }}
+        .metric-value {{
+            font-size: 32px;
+            font-weight: 800;
+            color: #1a202c;
+        }}
+        .metric-subtitle {{
+            font-size: 12px;
+            color: #4a5568;
+            margin-top: 5px;
+            font-weight: 600;
+        }}
+        .kpi-table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }}
+        .kpi-table th, .kpi-table td {{
+            border: 1px solid #e2e8f0;
+            padding: 12px;
+            text-align: left;
+            font-size: 14px;
+        }}
+        .kpi-table th {{
+            background-color: #f7fafc;
+            color: #4a5568;
+            font-weight: 700;
+        }}
+        .analysis-box {{
+            line-height: 1.7;
+            font-size: 15px;
+            background: #fff;
+            padding: 20px;
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+            white-space: pre-line;
+            color: #2d3748;
+        }}
+        .footer {{
+            margin-top: 50px;
+            border-top: 1px solid #e2e8f0;
+            padding-top: 20px;
+            font-size: 11px;
+            color: #a0aec0;
+            text-align: center;
+        }}
+        @media print {{
+            body {{
+                background: none;
+                padding: 0;
+            }}
+            .container {{
+                box-shadow: none;
+                border: none;
+                padding: 0;
+                max-width: 100%;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">CRI INFRASTRUCTURE INTELLIGENCE</div>
+            <div class="date">{datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M")} UTC</div>
+        </div>
+        
+        <h1>Reporte Ejecutivo de Salud del Mercado</h1>
+        
+        <div class="overview-grid">
+            <div class="metric-card {"critical" if snapshot['cri_score'] > 65 else "success" if snapshot['cri_score'] <= 30 else ""}">
+                <div class="metric-title">Composite Risk Index (CRI)</div>
+                <div class="metric-value">{snapshot['cri_score']:.2f}</div>
+                <div class="metric-subtitle">ZONA: {snapshot['cri_zone']}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-title">Temperature Market Index (TMI)</div>
+                <div class="metric-value">{snapshot['tmi_score']:.2f}</div>
+                <div class="metric-subtitle">ESTADO: {snapshot['tmi_zone']}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-title">Variación CRI 24h</div>
+                <div class="metric-value">{snapshot['cri_delta_24h']:+.2f}</div>
+                <div class="metric-subtitle">Tendencia actual</div>
+            </div>
+        </div>
+        
+        <h2>Indicadores de Telemetría Clave (KPIs)</h2>
+        <table class="kpi-table">
+            <thead>
+                <tr>
+                    <th>KPI</th>
+                    <th>Nombre Comercial</th>
+                    <th>Puntuación</th>
+                    <th>Origen de Datos</th>
+                    <th>Frescura</th>
+                </tr>
+            </thead>
+            <tbody>
+    """
+    for code, info in snapshot["kpis"].items():
+        fresh = f"Hace {info['freshness_h']}h" if info['freshness_h'] is not None else "N/A"
+        html_content += f"""
+                <tr>
+                    <td><strong>{code}</strong></td>
+                    <td>{info['name']}</td>
+                    <td>{info['value']:.1f}/100</td>
+                    <td>{info['source']}</td>
+                    <td>{fresh}</td>
+                </tr>
+        """
+        
+    html_content += f"""
+            </tbody>
+        </table>
+        
+        <h2>Alertas y Análisis Predictivo</h2>
+        <table class="kpi-table">
+            <tr>
+                <td><strong>Señal de Alerta Temprana (EWS):</strong></td>
+                <td>{snapshot['predictive'].get('ew_signal', 'NORMAL')}</td>
+            </tr>
+            <tr>
+                <td><strong>Time To Danger (TTD):</strong></td>
+                <td>{snapshot['predictive'].get('ttd_days', 'N/A')} días (hasta CRI > 65)</td>
+            </tr>
+            <tr>
+                <td><strong>Probabilidad de Corrección (30d):</strong></td>
+                <td>{snapshot['predictive'].get('collapse_prob_30d_pct', 0)}%</td>
+            </tr>
+        </table>
+
+        <h2>Análisis Inteligente por IA (Gemini 2.5 Flash)</h2>
+        <div class="analysis-box">
+            {gemini_resp}
+        </div>
+        
+        <div class="footer">
+            Este reporte ejecutivo fue auto-generado por la plataforma CRI Metrics v3.0 mediante recolección de telemetría distribuida y síntesis cognitiva generativa.
+        </div>
+    </div>
+</body>
+</html>
+"""
+    return HTMLResponse(content=html_content)

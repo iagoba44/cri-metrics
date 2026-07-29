@@ -1,0 +1,26 @@
+{
+    "alert_threshold": 65.0,
+    "channels": {
+        "slack": {
+            "enabled": false,
+            "url": ""
+        },
+        "discord": {
+            "enabled": false,
+            "url": ""
+        },
+        "telegram": {
+            "enabled": false,
+            "bot_token": "",
+            "chat_id": ""
+        },
+        "email": {
+            "enabled": false,
+            "smtp_server": "",
+            "smtp_port": 587,
+            "username": "",
+            "password": "",
+            "to_email": ""
+        }
+    }
+}

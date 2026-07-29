@@ -29,6 +29,40 @@ def simulate_scenario(payload: dict, db: Session = Depends(get_db)):
     return calculate_cri(db)
 
 
+@router.post("/simulate-custom")
+def simulate_custom(payload: dict, db: Session = Depends(get_db)):
+    """Simula un escenario con parámetros KPI personalizados (What-If)."""
+    params = payload.get("params")
+    if not params:
+        raise HTTPException(status_code=400, detail="Parámetros 'params' requeridos")
+
+    weights = {"GSPI": 0.25, "SHPD": 0.15, "LTCR": 0.20, "CFBR": 0.20, "UOR": 0.20}
+    validated_params = {}
+    for k in weights:
+        if k not in params:
+            raise HTTPException(status_code=400, detail=f"Falta el parámetro KPI: {k}")
+        try:
+            val = float(params[k])
+            if not (0 <= val <= 100):
+                raise ValueError()
+            validated_params[k] = val
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"El valor de {k} debe ser un número entre 0 y 100")
+
+    SCENARIOS["custom"] = {
+        "id": "custom",
+        "name": "Personalizado",
+        "description": "Escenario interactivo con parámetros personalizados",
+        "icon": "🎛️",
+        "color": "#a2c9ff",
+        "params": validated_params
+    }
+
+    mode_state = get_mode_state()
+    mode_state.set_scenario("custom")
+    return calculate_cri(db)
+
+
 @router.post("/simulate-critical")
 def simulate_critical(db: Session = Depends(get_db)):
     mode_state = get_mode_state()

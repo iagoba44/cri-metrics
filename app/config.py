@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     # API Keys para fuentes opcionales
     NEWSAPI_KEY: str = ""
     ALPHAVANTAGE_KEY: str = ""
+    EIA_API_KEY: str = ""
     
     # API Keys para Consensus Diff (comité de IA)
     GEMINI_API_KEY: str = ""
@@ -57,6 +58,12 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "cri_metrics"
     POSTGRES_USER: str = "cri"
     POSTGRES_PASSWORD: str = ""
+    REDIS_URL: str = "redis://localhost:6379/0"
+
+    # Auth configuration
+    ADMIN_USERNAME: str = "admin"
+    ADMIN_PASSWORD: str = "admin123"
+    SECRET_KEY: str = "supersecretkeychangeinproduction"
 
     model_config = SettingsConfigDict(env_file=".env")
 

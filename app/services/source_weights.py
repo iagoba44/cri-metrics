@@ -28,6 +28,7 @@ DEFAULT_SOURCE_WEIGHTS = {
     "BINANCE": 0.9,             # API pública, datos ticker precisos
     "DEFILLAMA": 0.7,           # TVL como proxy macro, buen indicador
     "DEFILLAMA_VOL": 0.4,       # Volatilidad entre chains, más ruido
+    "EIA_GOV": 0.6,             # Precios electricidad industrial, proxy de costes de energía
     
     # UOR - Ocupación / infrautilización
     "VAST_AI_LIVE": 1.0,        # Datos directos de marketplace

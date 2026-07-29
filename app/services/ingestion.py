@@ -57,6 +57,7 @@ class IngestionPipeline:
             from app.external.nicehash import NiceHashClient
             from app.external.huggingface import HuggingFaceClient
             from app.external.defillama import DeFiLlamaClient
+            from app.external.eia import EIAClient
             sources = [
                 VastAIClient(),
                 CoinGeckoClient(),
@@ -68,6 +69,7 @@ class IngestionPipeline:
                 NiceHashClient(),
                 HuggingFaceClient(),
                 DeFiLlamaClient(),
+                EIAClient(),
             ]
         else:
             from app.external.sec_edgar import SECDataSource
@@ -175,6 +177,7 @@ class IngestionPipeline:
             from app.external.nicehash import NiceHashClient
             from app.external.huggingface import HuggingFaceClient
             from app.external.defillama import DeFiLlamaClient
+            from app.external.eia import EIAClient
             sources = [
                 VastAIClient(),
                 CoinGeckoClient(),
@@ -186,6 +189,7 @@ class IngestionPipeline:
                 NiceHashClient(),
                 HuggingFaceClient(),
                 DeFiLlamaClient(),
+                EIAClient(),
             ]
         else:
             from app.external.sec_edgar import SECDataSource

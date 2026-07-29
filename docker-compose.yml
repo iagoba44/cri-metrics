@@ -1,13 +1,39 @@
 version: '3.8'
 
 services:
+  db:
+    image: postgres:15-alpine
+    container_name: cri-postgres
+    environment:
+      POSTGRES_USER: cri
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-cri123}
+      POSTGRES_DB: cri_metrics
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: cri-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
   cri-api:
     build: .
     container_name: cri-metrics-api
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=sqlite:///./cri_metrics.db
+      - DB_ENGINE=postgres
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=cri_metrics
+      - POSTGRES_USER=cri
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-cri123}
+      - REDIS_URL=redis://redis:6379/0
       - ALERT_THRESHOLD=65.0
       - DATA_FRESHNESS_HOURS=24
       - NEWSAPI_KEY=${NEWSAPI_KEY:-}
@@ -16,27 +42,17 @@ services:
     volumes:
       - cri-data:/app/data
       - ./.env:/app/.env:ro
+    depends_on:
+      - db
+      - redis
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/api/v1/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
-
-  # Opcional: PostgreSQL para produccion
-  # db:
-  #   image: postgres:15-alpine
-  #   container_name: cri-postgres
-  #   environment:
-  #     POSTGRES_USER: cri
-  #     POSTGRES_PASSWORD: ${DB_PASSWORD:-cri123}
-  #     POSTGRES_DB: cri_metrics
-  #   volumes:
-  #     - postgres-data:/var/lib/postgresql/data
-  #   ports:
-  #     - "5432:5432"
-  #   restart: unless-stopped
+      start_period: 15s
 
 volumes:
   cri-data:
+  postgres-data:
